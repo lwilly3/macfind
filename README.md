@@ -1,6 +1,8 @@
 # macfind
 
 [![CI](https://github.com/lwilly3/macfind/actions/workflows/ci.yml/badge.svg)](https://github.com/lwilly3/macfind/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/github/v/release/lwilly3/macfind?label=version)](https://github.com/lwilly3/macfind/releases/latest)
+[![Licence MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
 Retrouve l'adresse IP d'un équipement à partir de son adresse MAC (ou l'inverse)
 en interrogeant directement les routeurs MikroTik : baux DHCP et table ARP,
@@ -160,9 +162,12 @@ src/
 data/oui.tsv   registre IEEE, régénéré par scripts/maj-oui.sh
 ```
 
+- Contribuer : [CONTRIBUTING.md](CONTRIBUTING.md)
+- Sécurité et signalement d'une faille : [SECURITY.md](SECURITY.md)
 - Versions et publication : [docs/RELEASING.md](docs/RELEASING.md)
 - Historique : [CHANGELOG.md](CHANGELOG.md)
 
 ## Licence
 
-[MIT](LICENSE)
+[MIT](LICENSE). La base des fabricants (`data/oui.tsv`) est dérivée du
+[registre public de l'IEEE](https://standards-oui.ieee.org/).

@@ -7,6 +7,8 @@ et le projet respecte le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [0.2.0] - 2026-11-18
+
 ### Ajouté
 - Colonne « Fabricant » et champ JSON `vendor`, déduits de l'OUI de l'adresse
   MAC grâce au registre IEEE embarqué dans le binaire (aucune requête réseau).
@@ -31,5 +33,6 @@ et le projet respecte le [versionnage sémantique](https://semver.org/lang/fr/).
 - Commandes `init`, `set-password`, `forget`, `leases`, `routers`.
 - Options `--router`, `--no-arp`, `--json`, `--ask`.
 
-[Non publié]: https://github.com/lwilly3/macfind/compare/v0.1.0...HEAD
+[Non publié]: https://github.com/lwilly3/macfind/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/lwilly3/macfind/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lwilly3/macfind/releases/tag/v0.1.0
