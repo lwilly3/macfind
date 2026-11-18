@@ -88,6 +88,7 @@ macfind 192.168.20.           # tout un sous-réseau (préfixe terminé par un p
 macfind imprimante            # nom d'hôte ou commentaire
 macfind hikvision             # fabricant (utile quand l'appareil n'a pas de nom)
 macfind leases                # tous les baux DHCP
+macfind scan                  # balaie le sous-réseau du Mac
 ```
 
 | Option | Effet |
@@ -103,6 +104,25 @@ macfind leases                # tous les baux DHCP
 | `macfind routers` | Liste les routeurs configurés |
 | `macfind set-password <nom>` | Enregistre ou change les identifiants |
 | `macfind forget <nom>` | Efface les identifiants enregistrés |
+
+### Balayage du réseau local
+
+`macfind scan` interroge toutes les adresses du sous-réseau auquel le Mac est
+relié et liste celles qui répondent : IP, MAC, fabricant, et le nom d'hôte
+quand le routeur le connaît par un bail. Il trouve aussi les équipements en
+IP fixe qui n'ont jamais demandé de bail (statut « sans bail »), même s'ils
+bloquent le ping. Compte environ deux secondes pour 254 adresses.
+
+```bash
+macfind scan                      # le sous-réseau du Mac
+macfind scan 192.168.1.           # un sous-réseau précis (ou 192.168.1.0/24)
+macfind scan -f dahua             # filtrer par fabricant, nom, MAC ou IP
+macfind scan --json               # pour un script
+```
+
+Le balayage ne porte que sur le segment local : pour un autre sous-réseau,
+`macfind 192.168.20.` liste ce que le routeur connaît. Sans routeur configuré
+ou joignable, le balayage fonctionne quand même, sans les noms d'hôte.
 
 ### Fabricant
 
@@ -136,6 +156,7 @@ src/
   routeros.rs  client de l'API REST RouterOS
   mac.rs       normalisation et détection des adresses MAC
   oui.rs       fabricant à partir de l'OUI
+  scan.rs      balayage du sous-réseau local
 data/oui.tsv   registre IEEE, régénéré par scripts/maj-oui.sh
 ```
 

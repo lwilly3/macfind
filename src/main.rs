@@ -2,6 +2,7 @@ mod config;
 mod mac;
 mod oui;
 mod routeros;
+mod scan;
 
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
@@ -56,6 +57,15 @@ enum Command {
     Leases,
     /// Affiche les routeurs configurés
     Routers,
+    /// Balaie le sous-réseau local du Mac : IP, MAC, fabricant et nom
+    Scan {
+        /// Sous-réseau à balayer : 192.168.1.  ou  192.168.1.0/24
+        /// (par défaut, celui du Mac)
+        target: Option<String>,
+        /// Ne garder que les lignes correspondantes (MAC, IP, nom, fabricant)
+        #[arg(short, long, value_name = "TEXTE")]
+        filter: Option<String>,
+    },
 }
 
 /// Une ligne de résultat, unifiée entre DHCP et ARP.
@@ -178,47 +188,75 @@ fn clients(cli: &Cli, cfg: &config::Config) -> Result<Vec<(RouterClient, bool)>>
         .collect()
 }
 
-type RouterData = Result<(Vec<Lease>, Vec<ArpEntry>)>;
+/// Ce qu'un routeur a renvoyé.
+struct RouterData {
+    router: String,
+    leases: Vec<Lease>,
+    arp: Vec<ArpEntry>,
+}
 
-fn collect(cli: &Cli, query: Option<&str>) -> Result<Vec<Hit>> {
+/// Interroge chaque routeur en parallèle (un thread par routeur). Un routeur
+/// en erreur est signalé puis ignoré. Renvoie aussi les clients dont les
+/// identifiants saisis ont fonctionné, pour proposer de les enregistrer.
+fn fetch(cli: &Cli, want_arp: bool) -> Result<(Vec<RouterData>, Vec<RouterClient>)> {
     let cfg = config::load()?;
     let clients = clients(cli, &cfg)?;
 
-    // Interroge chaque routeur en parallèle (un thread par routeur).
-    let results: Vec<(String, RouterData)> = std::thread::scope(|s| {
+    let results: Vec<Result<(Vec<Lease>, Vec<ArpEntry>)>> = std::thread::scope(|s| {
         let handles: Vec<_> = clients
             .iter()
             .map(|(c, _)| {
-                let want_arp = !cli.no_arp && query.is_some();
                 s.spawn(move || {
-                    let r = (|| {
-                        let leases = c.dhcp_leases()?;
-                        let arp = if want_arp { c.arp()? } else { vec![] };
-                        Ok((leases, arp))
-                    })();
-                    (c.name().to_string(), r)
+                    let leases = c.dhcp_leases()?;
+                    let arp = if want_arp { c.arp()? } else { vec![] };
+                    Ok((leases, arp))
                 })
             })
             .collect();
         handles.into_iter().map(|h| h.join().unwrap()).collect()
     });
 
-    let mut hits = Vec::new();
+    let mut data = Vec::new();
     let mut to_offer = Vec::new();
-    for ((router, res), (client, prompted)) in results.into_iter().zip(&clients) {
-        let (leases, arp) = match res {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("⚠️  {e:#}");
-                continue;
+    for (res, (client, prompted)) in results.into_iter().zip(clients) {
+        match res {
+            Ok((leases, arp)) => {
+                data.push(RouterData {
+                    router: client.name().to_string(),
+                    leases,
+                    arp,
+                });
+                if prompted {
+                    to_offer.push(client);
+                }
             }
-        };
-        // Connexion réussie avec des identifiants saisis : on proposera de les garder.
-        if *prompted {
-            to_offer.push(client);
+            Err(e) => eprintln!("⚠️  {e:#}"),
         }
+    }
+    Ok((data, to_offer))
+}
+
+/// Propose d'enregistrer les identifiants saisis qui ont fonctionné.
+fn offer_saves(clients: &[RouterClient]) {
+    for c in clients {
+        let creds = config::Credentials {
+            user: c.user().to_string(),
+            password: c.password().to_string(),
+            prompted: true,
+        };
+        if let Err(e) = config::offer_to_save(c.router(), &creds) {
+            eprintln!("⚠️  enregistrement impossible : {e:#}");
+        }
+    }
+}
+
+fn collect(cli: &Cli, query: Option<&str>) -> Result<Vec<Hit>> {
+    let (data, to_offer) = fetch(cli, !cli.no_arp && query.is_some())?;
+
+    let mut hits = Vec::new();
+    for d in &data {
         let mut seen_macs = Vec::new();
-        for l in &leases {
+        for l in &d.leases {
             let ip = l
                 .active_address
                 .as_deref()
@@ -229,11 +267,11 @@ fn collect(cli: &Cli, query: Option<&str>) -> Result<Vec<Hit>> {
             let comment = l.comment.as_deref().unwrap_or("");
             if query.is_none_or(|q| matches(q, ip, m, host, comment)) {
                 seen_macs.push(mac::normalize(m));
-                hits.push(Hit::from_lease(&router, l));
+                hits.push(Hit::from_lease(&d.router, l));
             }
         }
         // L'ARP complète le DHCP (équipements en IP fixe), sans doublons.
-        for a in &arp {
+        for a in &d.arp {
             let m = a.mac_address.as_deref().unwrap_or("");
             if seen_macs.contains(&mac::normalize(m)) {
                 continue;
@@ -241,22 +279,95 @@ fn collect(cli: &Cli, query: Option<&str>) -> Result<Vec<Hit>> {
             let ip = a.address.as_deref().unwrap_or("");
             let comment = a.comment.as_deref().unwrap_or("");
             if query.is_none_or(|q| matches(q, ip, m, "", comment)) {
-                hits.push(Hit::from_arp(&router, a));
+                hits.push(Hit::from_arp(&d.router, a));
             }
         }
     }
     // Affiche d'abord les résultats, puis propose l'enregistrement.
     print(&hits, cli.json)?;
-    for c in to_offer {
-        let creds = config::Credentials {
-            user: c.user().to_string(),
-            password: c.password().to_string(),
-            prompted: true,
-        };
-        if let Err(e) = config::offer_to_save(c.router(), &creds) {
-            eprintln!("⚠️  enregistrement impossible : {e:#}");
-        }
+    offer_saves(&to_offer);
+    Ok(hits)
+}
+
+/// Bail du routeur correspondant à un équipement trouvé par le balayage :
+/// de préférence celui qui porte la même IP, sinon le premier de cette MAC.
+fn lease_for<'a>(data: &'a [RouterData], found: &scan::Found) -> Option<(&'a str, &'a Lease)> {
+    let wanted = mac::normalize(&found.mac);
+    let ip = found.ip.to_string();
+    let mut same_mac = data
+        .iter()
+        .flat_map(|d| d.leases.iter().map(move |l| (d.router.as_str(), l)))
+        .filter(|(_, l)| mac::normalize(l.mac_address.as_deref().unwrap_or("")) == wanted)
+        .peekable();
+    let first = same_mac.peek().copied();
+    same_mac
+        .find(|(_, l)| {
+            l.active_address.as_deref() == Some(ip.as_str())
+                || l.address.as_deref() == Some(ip.as_str())
+        })
+        .or(first)
+}
+
+/// Construit la ligne d'un équipement balayé. `router_known` indique que les
+/// baux d'au moins un routeur ont pu être lus.
+fn scan_hit(found: &scan::Found, lease: Option<(&str, &Lease)>, router_known: bool) -> Hit {
+    let mut host = lease
+        .and_then(|(_, l)| l.host_name.clone())
+        .unwrap_or_default();
+    if found.own && host.is_empty() {
+        host = "(ce Mac)".to_string();
     }
+    let mut detail = found.iface.clone();
+    if let Some(c) = lease
+        .and_then(|(_, l)| l.comment.as_ref())
+        .filter(|c| !c.is_empty())
+    {
+        detail.push_str(&format!(" — {c}"));
+    }
+    let status = match lease {
+        Some((_, l)) if l.dynamic.as_deref() == Some("true") => "bail dynamique",
+        Some(_) => "bail statique",
+        None if router_known => "sans bail",
+        None => "",
+    };
+    Hit {
+        router: lease.map(|(r, _)| r.to_string()).unwrap_or_default(),
+        source: "SCAN",
+        ip: found.ip.to_string(),
+        mac: found.mac.clone(),
+        vendor: oui::vendor(&found.mac).to_string(),
+        host,
+        detail,
+        status: status.to_string(),
+    }
+}
+
+fn scan_command(cli: &Cli, target: Option<&str>, filter: Option<&str>) -> Result<Vec<Hit>> {
+    let (iface, hosts) = scan::plan(target, &scan::local_ifaces()?)?;
+    eprintln!(
+        "🔎 Balayage de {} adresse(s) sur {} (environ 2 s)…",
+        hosts.len(),
+        iface.name
+    );
+    let found = scan::run(&iface, &hosts)?;
+
+    // Les noms d'hôte viennent des baux du routeur, s'il est configuré et joignable.
+    let (data, to_offer) = if config::config_path().exists() {
+        fetch(cli, false).unwrap_or_else(|e| {
+            eprintln!("⚠️  noms d'hôte indisponibles : {e:#}");
+            (vec![], vec![])
+        })
+    } else {
+        (vec![], vec![])
+    };
+
+    let hits: Vec<Hit> = found
+        .iter()
+        .map(|f| scan_hit(f, lease_for(&data, f), !data.is_empty()))
+        .filter(|h| filter.is_none_or(|q| matches(q, &h.ip, &h.mac, &h.host, &h.detail)))
+        .collect();
+    print(&hits, cli.json)?;
+    offer_saves(&to_offer);
     Ok(hits)
 }
 
@@ -332,6 +443,12 @@ fn main() -> Result<()> {
         }
         Some(Command::Leases) => {
             collect(&cli, None)?;
+        }
+        Some(Command::Scan { target, filter }) => {
+            let hits = scan_command(&cli, target.as_deref(), filter.as_deref())?;
+            if hits.is_empty() {
+                std::process::exit(1);
+            }
         }
         None => match cli.query.as_deref() {
             Some(q) => {

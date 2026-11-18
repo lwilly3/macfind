@@ -13,6 +13,9 @@ et le projet respecte le [versionnage sémantique](https://semver.org/lang/fr/).
 - Les adresses MAC aléatoires (iPhone, Android, Windows récents) sont
   signalées par « (MAC privée) ».
 - Recherche par fabricant : `macfind hikvision`, `macfind privée`.
+- Commande `macfind scan` : balayage actif du sous-réseau local du Mac, qui
+  trouve aussi les équipements en IP fixe absents des baux. Les noms d'hôte
+  sont repris des baux du routeur ; `--filter` restreint l'affichage.
 
 ## [0.1.0] - 2026-11-18
 
