@@ -7,6 +7,13 @@ et le projet respecte le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Ajouté
+- Colonne « Fabricant » et champ JSON `vendor`, déduits de l'OUI de l'adresse
+  MAC grâce au registre IEEE embarqué dans le binaire (aucune requête réseau).
+- Les adresses MAC aléatoires (iPhone, Android, Windows récents) sont
+  signalées par « (MAC privée) ».
+- Recherche par fabricant : `macfind hikvision`, `macfind privée`.
+
 ## [0.1.0] - 2026-11-18
 
 ### Ajouté

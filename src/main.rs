@@ -1,5 +1,6 @@
 mod config;
 mod mac;
+mod oui;
 mod routeros;
 
 use anyhow::{bail, Result};
@@ -17,7 +18,7 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
 
-    /// MAC (complète ou partielle, tout format), IP ou nom d'hôte
+    /// MAC (complète ou partielle, tout format), IP, nom d'hôte ou fabricant
     query: Option<String>,
 
     /// Ne chercher que sur ce routeur
@@ -64,6 +65,8 @@ struct Hit {
     source: &'static str,
     ip: String,
     mac: String,
+    /// Fabricant déduit de l'OUI ; vide s'il est inconnu.
+    vendor: String,
     host: String,
     detail: String,
     status: String,
@@ -95,6 +98,7 @@ impl Hit {
             source: "DHCP",
             ip,
             mac: mac::pretty(l.mac_address.as_deref().unwrap_or_default()),
+            vendor: oui::vendor(l.mac_address.as_deref().unwrap_or_default()).to_string(),
             host: l.host_name.clone().unwrap_or_default(),
             detail,
             status,
@@ -116,6 +120,7 @@ impl Hit {
             source: "ARP",
             ip: a.address.clone().unwrap_or_default(),
             mac: mac::pretty(a.mac_address.as_deref().unwrap_or_default()),
+            vendor: oui::vendor(a.mac_address.as_deref().unwrap_or_default()).to_string(),
             host: String::new(),
             detail,
             status: status.to_string(),
@@ -123,7 +128,8 @@ impl Hit {
     }
 }
 
-/// Règle de correspondance : MAC partielle (tout format), IP exacte/préfixe, ou nom d'hôte.
+/// Règle de correspondance : MAC partielle (tout format), IP exacte/préfixe,
+/// nom d'hôte, commentaire ou fabricant.
 fn matches(query: &str, ip: &str, mac_addr: &str, host: &str, comment: &str) -> bool {
     let q = query.trim();
     if mac::looks_like_mac(q) && mac::normalize(mac_addr).contains(&mac::normalize(q)) {
@@ -133,8 +139,10 @@ fn matches(query: &str, ip: &str, mac_addr: &str, host: &str, comment: &str) -> 
         return true;
     }
     let ql = q.to_lowercase();
-    (!host.is_empty() && host.to_lowercase().contains(&ql))
-        || (!comment.is_empty() && comment.to_lowercase().contains(&ql))
+    !ql.is_empty()
+        && [host, comment, oui::vendor(mac_addr)]
+            .iter()
+            .any(|field| field.to_lowercase().contains(&ql))
 }
 
 fn find_router<'a>(cfg: &'a config::Config, name: &str) -> Result<&'a config::Router> {
@@ -252,6 +260,9 @@ fn collect(cli: &Cli, query: Option<&str>) -> Result<Vec<Hit>> {
     Ok(hits)
 }
 
+/// Largeur maximale de la colonne « Fabricant » (le JSON garde le nom entier).
+const VENDOR_WIDTH: usize = 24;
+
 fn print(hits: &[Hit], json: bool) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(hits)?);
@@ -267,13 +278,15 @@ fn print(hits: &[Hit], json: bool) -> Result<()> {
         "Source",
         "IP",
         "MAC",
+        "Fabricant",
         "Hôte",
         "Serveur / Interface",
         "Statut",
     ]);
     for h in hits {
+        let vendor = oui::short(&h.vendor, VENDOR_WIDTH);
         t.add_row(vec![
-            &h.router, h.source, &h.ip, &h.mac, &h.host, &h.detail, &h.status,
+            &h.router, h.source, &h.ip, &h.mac, &vendor, &h.host, &h.detail, &h.status,
         ]);
     }
     println!("{t}");
@@ -350,5 +363,16 @@ mod tests {
         assert!(!matches("192.168.20.1", ip, m, host, ""));
         assert!(matches("IMPRIMANTE", ip, m, host, ""));
         assert!(!matches("11:22:33", ip, m, host, ""));
+    }
+
+    #[test]
+    fn matches_vendor() {
+        // 00:15:5D appartient à Microsoft (cartes virtuelles Hyper-V).
+        let (ip, m) = ("192.168.1.50", "00:15:5D:00:00:01");
+        assert!(matches("microsoft", ip, m, "", ""));
+        assert!(matches("Micro", ip, m, "serveur", ""));
+        assert!(!matches("apple", ip, m, "serveur", ""));
+        // Les adresses aléatoires se retrouvent par leur libellé.
+        assert!(matches("privée", ip, "DA:A1:19:00:00:01", "", ""));
     }
 }

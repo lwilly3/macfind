@@ -8,11 +8,11 @@ par l'API REST de RouterOS v7.
 
 ```console
 $ macfind abcd
-┌───────────┬────────┬───────────────┬───────────────────┬─────────┬──────────────────────────────┬────────────────────────┐
-│ Routeur   ┆ Source ┆ IP            ┆ MAC               ┆ Hôte    ┆ Serveur / Interface          ┆ Statut                 │
-╞═══════════╪════════╪═══════════════╪═══════════════════╪═════════╪══════════════════════════════╪════════════════════════╡
-│ principal ┆ DHCP   ┆ 192.168.1.157 ┆ EC:EB:B8:12:AB:CD ┆ serveur ┆ serveurDHCPLocal (dynamique) ┆ bound (vu il y a 1m7s) │
-└───────────┴────────┴───────────────┴───────────────────┴─────────┴──────────────────────────────┴────────────────────────┘
+┌───────────┬────────┬───────────────┬───────────────────┬────────────────────────────┬─────────┬──────────────────────────────┬────────────────────────┐
+│ Routeur   ┆ Source ┆ IP            ┆ MAC               ┆ Fabricant                  ┆ Hôte    ┆ Serveur / Interface          ┆ Statut                 │
+╞═══════════╪════════╪═══════════════╪═══════════════════╪════════════════════════════╪═════════╪══════════════════════════════╪════════════════════════╡
+│ principal ┆ DHCP   ┆ 192.168.1.157 ┆ EC:EB:B8:12:AB:CD ┆ Hewlett Packard Enterprise ┆ serveur ┆ serveurDHCPLocal (dynamique) ┆ bound (vu il y a 1m7s) │
+└───────────┴────────┴───────────────┴───────────────────┴────────────────────────────┴─────────┴──────────────────────────────┴────────────────────────┘
 ```
 
 **Pourquoi passer par le routeur ?** Depuis un poste, la table ARP ne montre
@@ -86,6 +86,7 @@ macfind ddeeff                # MAC partielle
 macfind 192.168.20.15         # IP exacte → MAC
 macfind 192.168.20.           # tout un sous-réseau (préfixe terminé par un point)
 macfind imprimante            # nom d'hôte ou commentaire
+macfind hikvision             # fabricant (utile quand l'appareil n'a pas de nom)
 macfind leases                # tous les baux DHCP
 ```
 
@@ -102,6 +103,17 @@ macfind leases                # tous les baux DHCP
 | `macfind routers` | Liste les routeurs configurés |
 | `macfind set-password <nom>` | Enregistre ou change les identifiants |
 | `macfind forget <nom>` | Efface les identifiants enregistrés |
+
+### Fabricant
+
+La colonne « Fabricant » vient de l'OUI, les trois premiers octets de la MAC,
+comparé au registre public de l'IEEE embarqué dans le binaire : aucune requête
+réseau, aucune adresse envoyée à un tiers. Avec `--json`, le champ s'appelle
+`vendor`.
+
+« (MAC privée) » désigne une adresse aléatoire, comme en utilisent par défaut
+les iPhone, les Android et les Windows récents sur le Wi-Fi : le fabricant
+n'est alors pas identifiable. `macfind privée` les liste toutes.
 
 Le code de sortie vaut 1 quand une recherche ne trouve rien.
 La variable `MACFIND_PASSWORD` remplace le Trousseau pour un test ponctuel.
@@ -123,6 +135,8 @@ src/
   config.rs    configuration et Trousseau macOS
   routeros.rs  client de l'API REST RouterOS
   mac.rs       normalisation et détection des adresses MAC
+  oui.rs       fabricant à partir de l'OUI
+data/oui.tsv   registre IEEE, régénéré par scripts/maj-oui.sh
 ```
 
 - Versions et publication : [docs/RELEASING.md](docs/RELEASING.md)

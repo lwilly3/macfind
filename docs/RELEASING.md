@@ -22,16 +22,18 @@ dans une version mineure ; il doit alors être signalé dans le changelog.
 
 ## Étapes d'une publication
 
-1. Mettre à jour `version` dans `Cargo.toml`, puis `cargo build` pour
+1. Rafraîchir la base des fabricants : `scripts/maj-oui.sh` (demande `curl`
+   et `python3`), puis `cargo test`.
+2. Mettre à jour `version` dans `Cargo.toml`, puis `cargo build` pour
    rafraîchir `Cargo.lock`.
-2. Dans `CHANGELOG.md`, renommer `## [Non publié]` en `## [X.Y.Z] - AAAA-MM-JJ`,
+3. Dans `CHANGELOG.md`, renommer `## [Non publié]` en `## [X.Y.Z] - AAAA-MM-JJ`,
    recréer une section `## [Non publié]` vide et mettre à jour les liens du bas.
-3. Valider et pousser :
+4. Valider et pousser :
    ```bash
    git commit -am "chore: version X.Y.Z"
    git push
    ```
-4. Poser l'étiquette et la pousser :
+5. Poser l'étiquette et la pousser :
    ```bash
    git tag -a vX.Y.Z -m "macfind X.Y.Z"
    git push origin vX.Y.Z
