@@ -71,10 +71,28 @@ enum MacfindCLI {
     /// Teste la connexion puis enregistre le routeur (config et Trousseau).
     /// `macfind` n'écrit rien si le test échoue.
     static func ajouter(_ routeur: NouveauRouteur) async throws {
+        try await executer(routeur.arguments, entree: routeur.motDePasse)
+    }
+
+    /// Arguments de `macfind name` : un nom vide efface le nom existant.
+    /// Le « -- » protège un nom qui commencerait par un tiret.
+    static func argumentsDeNom(mac: String, nom: String) -> [String] {
+        let net = nom.trimmingCharacters(in: .whitespaces)
+        return net.isEmpty ? ["name", "--clear", mac] : ["name", "--", mac, net]
+    }
+
+    /// Donne un nom à un équipement, ou l'efface si `nom` est vide.
+    static func nommer(mac: String, nom: String) async throws {
+        try await executer(argumentsDeNom(mac: mac, nom: nom))
+    }
+
+    /// Lance une commande qui modifie quelque chose ; lève son message
+    /// d'erreur si elle échoue.
+    private static func executer(_ arguments: [String], entree: String? = nil) async throws {
         guard let binaire = binaire() else {
             throw Echec(message: "Le binaire macfind est introuvable dans l'application.")
         }
-        let resultat = try await lancer(binaire, routeur.arguments, entree: routeur.motDePasse)
+        let resultat = try await lancer(binaire, arguments, entree: entree)
         if resultat.code != 0 {
             throw Echec(message: messageDErreur(resultat.erreurs))
         }

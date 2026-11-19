@@ -14,7 +14,8 @@ final class MacfindAppTests: XCTestCase {
           {"router": "principal", "source": "DHCP", "ip": "192.168.20.9",
            "mac": "DA:A1:19:00:00:01", "vendor": "(MAC privée)",
            "host": "", "detail": "dhcp20 (statique) — Caméra", "status": "waiting",
-           "anomaly": "2 baux actifs sur dhcp20", "port": "ether5"}
+           "anomaly": "2 baux actifs sur dhcp20", "port": "ether5",
+           "name": "Caméra entrée"}
         ]
         """.utf8)
 
@@ -30,6 +31,10 @@ final class MacfindAppTests: XCTestCase {
         XCTAssertEqual(equipements[0].port, "")
         XCTAssertEqual(equipements[1].port, "ether5")
         XCTAssertTrue(equipements[1].correspond(a: "ether5"))
+        // Le nom donné remplace le nom d'hôte à l'affichage et se cherche.
+        XCTAssertEqual(equipements[0].nomAffiche, "serveur-test")
+        XCTAssertEqual(equipements[1].nomAffiche, "Caméra entrée")
+        XCTAssertTrue(equipements[1].correspond(a: "caméra"))
     }
 
     func testTriNumeriqueDesIp() {
@@ -152,14 +157,24 @@ final class MacfindAppTests: XCTestCase {
         let lignes = Export.csv(try Equipement.decoder(json)).components(separatedBy: "\r\n")
         XCTAssertEqual(
             lignes[0],
-            "\u{feff}Routeur;Source;IP;MAC;Fabricant;Hôte;Port;Serveur / Interface;Statut;Anomalie")
+            "\u{feff}Routeur;Source;IP;MAC;Fabricant;Nom;Hôte;Port;Serveur / Interface;Statut;Anomalie"
+        )
         XCTAssertEqual(
             lignes[2],
-            "principal;DHCP;192.168.20.9;DA:A1:19:00:00:01;(MAC privée);;ether5;dhcp20 (statique) — Caméra;waiting;2 baux actifs sur dhcp20"
+            "principal;DHCP;192.168.20.9;DA:A1:19:00:00:01;(MAC privée);Caméra entrée;;ether5;dhcp20 (statique) — Caméra;waiting;2 baux actifs sur dhcp20"
         )
         XCTAssertEqual(lignes.count, 4)  // en-tête, deux lignes, fin de fichier
         XCTAssertEqual(
             Export.nomDeFichier(source: .baux, date: Date(timeIntervalSince1970: 0)),
             "macfind-baux-dhcp-1970-01-01.csv")
+    }
+
+    func testArgumentsDeNom() {
+        let mac = "00:15:5D:00:00:01"
+        XCTAssertEqual(
+            MacfindCLI.argumentsDeNom(mac: mac, nom: " Caméra entrée "),
+            ["name", "--", mac, "Caméra entrée"])
+        // Un nom vide efface le nom existant.
+        XCTAssertEqual(MacfindCLI.argumentsDeNom(mac: mac, nom: "  "), ["name", "--clear", mac])
     }
 }

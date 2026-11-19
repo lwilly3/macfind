@@ -115,6 +115,7 @@ macfind scan                  # balaie le sous-réseau du Mac
 | `macfind leases --group subnet` | Baux regroupés par sous-réseau (`server` : par serveur DHCP) |
 | `macfind anomalies` | Liste les anomalies : plusieurs baux actifs pour une MAC, IP utilisée par deux MAC, équipement qui répond hors de ses baux |
 | `macfind routers` | Liste les routeurs configurés |
+| `macfind name <MAC> <nom>` | Donne un nom à un équipement (`--clear` pour l'effacer) ; `macfind names` les liste |
 | `macfind set-password <nom>` | Enregistre ou change les identifiants |
 | `macfind forget <nom>` | Efface les identifiants enregistrés |
 
