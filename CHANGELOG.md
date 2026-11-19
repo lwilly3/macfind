@@ -7,6 +7,8 @@ et le projet respecte le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [0.3.0] - 2026-11-19
+
 ### Modifié
 - `macfind leases` lit aussi la table ARP, nécessaire à la détection des
   anomalies (une requête de plus par routeur ; `--no-arp` l'évite).
@@ -85,6 +87,7 @@ et le projet respecte le [versionnage sémantique](https://semver.org/lang/fr/).
 - Commandes `init`, `set-password`, `forget`, `leases`, `routers`.
 - Options `--router`, `--no-arp`, `--json`, `--ask`.
 
-[Non publié]: https://github.com/lwilly3/macfind/compare/v0.2.0...HEAD
+[Non publié]: https://github.com/lwilly3/macfind/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/lwilly3/macfind/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/lwilly3/macfind/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lwilly3/macfind/releases/tag/v0.1.0
