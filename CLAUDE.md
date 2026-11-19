@@ -26,6 +26,8 @@ src/
   anomaly.rs   détection des anomalies (baux multiples, IP partagée, adresse
                hors bail) à partir des baux et de l'ARP ; fonctions pures
   mac.rs       normalisation et détection des MAC
+  names.rs     noms donnés aux équipements (`~/.config/macfind/names.toml`,
+               clé = MAC) ; le routeur n'est jamais modifié
   oui.rs       fabricant à partir de l'OUI (`data/oui.tsv` embarqué par
                `include_str!`, recherche dichotomique)
   scan.rs      balayage du segment local : un datagramme UDP par adresse pour
@@ -46,6 +48,7 @@ app/Sources/MacfindApp/
   Equipement.swift   décodage de `Hit`, tri des IP, filtre de recherche
   AjoutRouteurView.swift  fenêtre d'ajout d'un routeur (`add-router`)
   Export.swift       export CSV pour Excel des lignes affichées
+  RenommerView.swift fenêtre « Renommer » (`macfind name`)
 scripts/build-app.sh assemble `dist/macfind.app` (signature ad hoc)
 ```
 
@@ -54,7 +57,7 @@ scripts/build-app.sh assemble `dist/macfind.app` (signature ad hoc)
   notarisation.
 
 - Commandes : `init`, `add-router`, `set-password`, `forget`, `leases`,
-  `anomalies`, `routers`, `scan`.
+  `anomalies`, `routers`, `scan`, `name`, `names`.
 - Options globales : `--router`, `--no-arp`, `--json`, `--csv`, `--ask`,
   `--no-prompt`.
 - Le format CSV existe en deux exemplaires à garder identiques : `to_csv`

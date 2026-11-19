@@ -7,6 +7,7 @@ struct ContentView: View {
     @State private var selection = Set<Equipement.ID>()
     @State private var ajoutRouteur = false
     @State private var erreurExport: String?
+    @State private var aRenommer: Equipement?
     @AppStorage("regroupement") private var regroupement = Regroupement.aucun
 
     private var lignes: [Equipement] {
@@ -70,6 +71,11 @@ struct ContentView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(erreurExport ?? "")
+        }
+        .sheet(item: $aRenommer) { equipement in
+            RenommerView(equipement: equipement) {
+                Task { await inventaire.charger() }
+            }
         }
         .sheet(isPresented: $ajoutRouteur) {
             AjoutRouteurView {
@@ -139,7 +145,7 @@ struct ContentView: View {
                 .width(min: 125, ideal: 135)
             TableColumn("MAC", value: \.mac) { Text($0.mac).monospaced() }
                 .width(min: 140, ideal: 150)
-            TableColumn("Hôte", value: \.host) { Text($0.host).help($0.host) }
+            TableColumn("Hôte", value: \.nomAffiche) { hote($0) }
                 .width(min: 80, ideal: 160)
             TableColumn("Anomalie", value: \.anomaly) { e in
                 Label(e.anomaly, systemImage: "exclamationmark.triangle.fill")
@@ -155,13 +161,28 @@ struct ContentView: View {
         .contextMenu(forSelectionType: Equipement.ID.self) { ids in menu(ids) }
     }
 
+    /// Cellule « Hôte » : le nom donné, puis le nom d'hôte en retrait.
+    private func hote(_ e: Equipement) -> some View {
+        HStack(spacing: 6) {
+            Text(e.nomAffiche)
+            if !e.name.isEmpty && !e.host.isEmpty {
+                Text(e.host).foregroundStyle(.secondary)
+            }
+        }
+        .help(e.name.isEmpty ? e.host : "\(e.name) — nom d'hôte : \(e.host.isEmpty ? "aucun" : e.host)")
+    }
+
     @ViewBuilder
     private func menu(_ ids: Set<Equipement.ID>) -> some View {
         if let e = lignes.first(where: { ids.contains($0.id) }), ids.count == 1 {
             Button("Copier l'IP") { copier(e.ip) }
             Button("Copier la MAC") { copier(e.mac) }
-            if !e.host.isEmpty {
-                Button("Copier le nom") { copier(e.host) }
+            if !e.nomAffiche.isEmpty {
+                Button("Copier le nom") { copier(e.nomAffiche) }
+            }
+            if !e.mac.isEmpty {
+                Divider()
+                Button("Renommer…") { aRenommer = e }
             }
         }
     }
@@ -206,7 +227,7 @@ struct ContentView: View {
             .width(min: 125, ideal: 135)
         TableColumn("MAC", value: \.mac) { Text($0.mac).monospaced() }
             .width(min: 140, ideal: 150)
-        TableColumn("Hôte", value: \.host) { Text($0.host).help($0.host) }
+        TableColumn("Hôte", value: \.nomAffiche) { hote($0) }
             .width(min: 80, ideal: 170)
         TableColumn("Port", value: \.port) { Text($0.port).help("Port du routeur où l'équipement est branché. Derrière un switch ou une borne, c'est le port qui y mène.") }
             .width(min: 50, ideal: 65)

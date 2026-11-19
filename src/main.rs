@@ -1,6 +1,7 @@
 mod anomaly;
 mod config;
 mod mac;
+mod names;
 mod oui;
 mod routeros;
 mod scan;
@@ -92,6 +93,20 @@ enum Command {
     Anomalies,
     /// Affiche les routeurs configurés
     Routers,
+    /// Donne un nom à un équipement, d'après son adresse MAC (le routeur
+    /// n'est pas modifié)
+    Name {
+        /// Adresse MAC complète, dans n'importe quel format
+        mac: String,
+        /// Nom à donner
+        #[arg(required_unless_present = "clear")]
+        name: Option<String>,
+        /// Effacer le nom donné à cette MAC
+        #[arg(long, conflicts_with = "name")]
+        clear: bool,
+    },
+    /// Liste les noms donnés aux équipements
+    Names,
     /// Balaie le sous-réseau local du Mac : IP, MAC, fabricant et nom
     Scan {
         /// Sous-réseau à balayer : 192.168.1.  ou  192.168.1.0/24
@@ -141,7 +156,7 @@ fn csv_field(value: &str) -> String {
 /// CRLF, et marque d'ordre d'octets pour que les accents soient reconnus.
 fn to_csv(hits: &[Hit]) -> String {
     let mut out = String::from(
-        "\u{feff}Routeur;Source;IP;MAC;Fabricant;Hôte;Port;Serveur / Interface;Statut;Anomalie\r\n",
+        "\u{feff}Routeur;Source;IP;MAC;Fabricant;Nom;Hôte;Port;Serveur / Interface;Statut;Anomalie\r\n",
     );
     for h in hits {
         let fields = [
@@ -150,6 +165,7 @@ fn to_csv(hits: &[Hit]) -> String {
             &h.ip,
             &h.mac,
             &h.vendor,
+            &h.name,
             &h.host,
             &h.port,
             &h.detail,
@@ -236,6 +252,27 @@ struct Hit {
     subnet: String,
     /// Port du routeur où l'équipement est branché ; vide s'il est inconnu.
     port: String,
+    /// Nom donné par l'utilisateur (`macfind name`) ; vide s'il n'y en a pas.
+    name: String,
+}
+
+impl Hit {
+    /// Texte de la colonne « Hôte » : le nom donné, suivi du nom d'hôte.
+    fn label(&self) -> String {
+        match (self.name.is_empty(), self.host.is_empty()) {
+            (true, _) => self.host.clone(),
+            (false, true) => self.name.clone(),
+            (false, false) => format!("{} ({})", self.name, self.host),
+        }
+    }
+}
+
+/// Noms personnalisés ; un fichier illisible est signalé puis ignoré.
+fn load_names() -> names::Names {
+    names::load().unwrap_or_else(|e| {
+        eprintln!("⚠️  {e:#}");
+        names::Names::default()
+    })
 }
 
 impl Hit {
@@ -265,6 +302,7 @@ impl Hit {
             server: l.server.clone().unwrap_or_default(),
             subnet: subnet_of(&ip),
             port: String::new(),
+            name: String::new(),
             ip,
             mac: mac::pretty(l.mac_address.as_deref().unwrap_or_default()),
             vendor: oui::vendor(l.mac_address.as_deref().unwrap_or_default()).to_string(),
@@ -291,6 +329,7 @@ impl Hit {
             server: String::new(),
             subnet: subnet_of(a.address.as_deref().unwrap_or_default()),
             port: String::new(),
+            name: String::new(),
             ip: a.address.clone().unwrap_or_default(),
             mac: mac::pretty(a.mac_address.as_deref().unwrap_or_default()),
             vendor: oui::vendor(a.mac_address.as_deref().unwrap_or_default()).to_string(),
@@ -486,7 +525,13 @@ fn offer_saves(clients: &[RouterClient]) {
 /// Lignes d'un routeur. `show_arp` ajoute les équipements connus de l'ARP
 /// seul ; `only_anomalies` ne garde que les lignes signalées, y compris une
 /// entrée ARP dont la MAC a déjà des baux (machine hors de ses baux).
-fn hits_for(d: &RouterData, query: Option<&str>, show_arp: bool, only_anomalies: bool) -> Vec<Hit> {
+fn hits_for(
+    d: &RouterData,
+    names: &names::Names,
+    query: Option<&str>,
+    show_arp: bool,
+    only_anomalies: bool,
+) -> Vec<Hit> {
     let report = anomaly::Report::new(&d.leases, &d.arp);
     let mut hits = Vec::new();
     let mut seen_macs = Vec::new();
@@ -499,11 +544,14 @@ fn hits_for(d: &RouterData, query: Option<&str>, show_arp: bool, only_anomalies:
         let m = l.mac_address.as_deref().unwrap_or("");
         let host = l.host_name.as_deref().unwrap_or("");
         let comment = l.comment.as_deref().unwrap_or("");
-        if !query.is_none_or(|q| matches(q, ip, m, host, comment)) {
+        // Le nom donné se cherche comme le commentaire.
+        let name = names.get(m);
+        if !query.is_none_or(|q| matches(q, ip, m, host, &format!("{comment}\n{name}"))) {
             continue;
         }
         seen_macs.push(mac::normalize(m));
         let mut hit = Hit::from_lease(&d.router, l);
+        hit.name = name.to_string();
         hit.anomaly = report.for_lease(l);
         hit.port = port_of(&d.hosts, m);
         if !only_anomalies || !hit.anomaly.is_empty() {
@@ -518,6 +566,7 @@ fn hits_for(d: &RouterData, query: Option<&str>, show_arp: bool, only_anomalies:
         let ip = a.address.as_deref().unwrap_or("");
         let comment = a.comment.as_deref().unwrap_or("");
         let mut hit = Hit::from_arp(&d.router, a);
+        hit.name = names.get(m).to_string();
         hit.anomaly = report.for_arp(a);
         hit.port = port_of(&d.hosts, m);
         // L'ARP ne connaît pas les noms : reprendre celui d'un bail de la même MAC.
@@ -534,7 +583,7 @@ fn hits_for(d: &RouterData, query: Option<&str>, show_arp: bool, only_anomalies:
         } else {
             // L'ARP complète le DHCP (équipements en IP fixe), sans doublons.
             !seen_macs.contains(&mac::normalize(m))
-                && query.is_none_or(|q| matches(q, ip, m, "", comment))
+                && query.is_none_or(|q| matches(q, ip, m, "", &format!("{comment}\n{}", hit.name)))
         };
         if keep {
             hits.push(hit);
@@ -553,9 +602,10 @@ fn collect(
     // les anomalies. `--no-arp` limite la détection aux baux.
     let (data, to_offer) = fetch(cli, !cli.no_arp)?;
     let show_arp = !cli.no_arp && query.is_some();
+    let names = load_names();
     let hits: Vec<Hit> = data
         .iter()
-        .flat_map(|d| hits_for(d, query, show_arp, only_anomalies))
+        .flat_map(|d| hits_for(d, &names, query, show_arp, only_anomalies))
         .collect();
     // Affiche d'abord les résultats, puis propose l'enregistrement.
     let empty = if only_anomalies {
@@ -623,6 +673,7 @@ fn scan_hit(found: &scan::Found, lease: Option<(&str, &Lease)>, router_known: bo
             .unwrap_or_default(),
         subnet: subnet_of(&found.ip.to_string()),
         port: String::new(),
+        name: String::new(),
         ip: found.ip.to_string(),
         mac: found.mac.clone(),
         vendor: oui::vendor(&found.mac).to_string(),
@@ -652,6 +703,7 @@ fn scan_command(cli: &Cli, target: Option<&str>, filter: Option<&str>) -> Result
         (vec![], vec![])
     };
 
+    let names = load_names();
     let hits: Vec<Hit> = found
         .iter()
         .map(|f| {
@@ -661,9 +713,20 @@ fn scan_command(cli: &Cli, target: Option<&str>, filter: Option<&str>) -> Result
                 .map(|d| port_of(&d.hosts, &f.mac))
                 .find(|p| !p.is_empty())
                 .unwrap_or_default();
+            hit.name = names.get(&f.mac).to_string();
             hit
         })
-        .filter(|h| filter.is_none_or(|q| matches(q, &h.ip, &h.mac, &h.host, &h.detail)))
+        .filter(|h| {
+            filter.is_none_or(|q| {
+                matches(
+                    q,
+                    &h.ip,
+                    &h.mac,
+                    &h.host,
+                    &format!("{}\n{}", h.detail, h.name),
+                )
+            })
+        })
         .collect();
     print(&hits, cli.format(), "Aucun résultat.")?;
     offer_saves(&to_offer);
@@ -752,13 +815,14 @@ fn table(hits: &[Hit]) -> Table {
     t.load_preset(UTF8_FULL_CONDENSED).set_header(header);
     for h in hits {
         let vendor = oui::short(&h.vendor, VENDOR_WIDTH);
+        let label = h.label();
         let mut row = vec![
             h.router.as_str(),
             h.source,
             &h.ip,
             &h.mac,
             &vendor,
-            &h.host,
+            &label,
             &h.detail,
             &h.status,
         ];
@@ -825,6 +889,33 @@ fn main() -> Result<()> {
                 );
             }
         }
+        Some(Command::Name { mac, name, clear }) => {
+            let mut all = names::load()?;
+            if *clear {
+                if all.remove(mac)? {
+                    names::save(&all)?;
+                    println!("✓ Nom effacé pour {}.", mac::pretty(mac));
+                } else {
+                    println!("Aucun nom enregistré pour {}.", mac::pretty(mac));
+                }
+            } else {
+                let name = name.as_deref().unwrap_or_default();
+                all.set(mac, name)?;
+                names::save(&all)?;
+                println!("✓ {} s'appelle « {} ».", mac::pretty(mac), name.trim());
+            }
+        }
+        Some(Command::Names) => {
+            let all = names::load()?;
+            let mut count = 0;
+            for (m, name) in all.entries() {
+                println!("{m}  {name}");
+                count += 1;
+            }
+            if count == 0 {
+                println!("Aucun nom enregistré. Pour en donner un : macfind name <MAC> <nom>");
+            }
+        }
         Some(Command::Leases { group }) => {
             collect(&cli, None, false, *group)?;
         }
@@ -873,6 +964,7 @@ mod tests {
             server: server.to_string(),
             subnet: subnet_of(ip),
             port: String::new(),
+            name: String::new(),
         }
     }
 
@@ -887,6 +979,8 @@ mod tests {
 
         let mut h = hit("192.0.2.10", "dhcp1");
         h.host = "poste;1".to_string();
+        h.name = "Accueil".to_string();
+        assert_eq!(h.label(), "Accueil (poste;1)");
         let csv = to_csv(&[h]);
         let mut lines = csv.split("\r\n");
         assert!(lines
@@ -895,7 +989,7 @@ mod tests {
             .starts_with("\u{feff}Routeur;Source;IP;MAC;"));
         assert_eq!(
             lines.next().unwrap(),
-            "principal;DHCP;192.0.2.10;00:15:5D:00:00:01;;\"poste;1\";;;;"
+            "principal;DHCP;192.0.2.10;00:15:5D:00:00:01;;Accueil;\"poste;1\";;;;"
         );
     }
 

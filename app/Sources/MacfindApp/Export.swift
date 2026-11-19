@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// marque d'ordre d'octets pour les accents.
 enum Export {
     static let enTete = [
-        "Routeur", "Source", "IP", "MAC", "Fabricant", "Hôte", "Port",
+        "Routeur", "Source", "IP", "MAC", "Fabricant", "Nom", "Hôte", "Port",
         "Serveur / Interface", "Statut", "Anomalie",
     ]
 
@@ -28,7 +28,7 @@ enum Export {
         var sortie = "\u{feff}" + enTete.joined(separator: ";") + "\r\n"
         for e in lignes {
             let champs = [
-                e.router, e.source, e.ip, e.mac, e.vendor, e.host, e.port, e.detail,
+                e.router, e.source, e.ip, e.mac, e.vendor, e.name, e.host, e.port, e.detail,
                 e.status, e.anomaly,
             ]
             sortie += champs.map(champ).joined(separator: ";") + "\r\n"
