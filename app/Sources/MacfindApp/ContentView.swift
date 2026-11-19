@@ -41,7 +41,10 @@ struct ContentView: View {
                     .padding(.vertical, 6)
                     .background(.orange.opacity(0.12))
             }
+            // Le contenu occupe toute la place : sans cela, un écran de
+            // message laisserait les onglets flotter au milieu de la fenêtre.
             contenu
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             piedDePage
         }

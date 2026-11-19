@@ -50,13 +50,25 @@ pub struct Found {
     pub own: bool,
 }
 
+/// Vrai pour une interface de tunnel (VPN WireGuard, IPsec, PPP…). Ces
+/// interfaces n'ont pas d'ARP : un balayage n'y trouverait rien, même quand
+/// leur masque ressemble à celui d'un réseau local (WireGuard en /24).
+fn is_tunnel(name: &str) -> bool {
+    ["utun", "tun", "ipsec", "ppp", "gif", "stf"]
+        .iter()
+        .any(|prefix| {
+            name.strip_prefix(prefix)
+                .is_some_and(|rest| rest.chars().all(|c| c.is_ascii_digit()))
+        })
+}
+
 /// Interfaces IPv4 utilisables : ni boucle locale, ni adresse auto-attribuée
-/// (169.254.x.x), ni liaison point à point (VPN).
+/// (169.254.x.x), ni liaison point à point, ni tunnel VPN.
 pub fn local_ifaces() -> Result<Vec<Iface>> {
     let all = if_addrs::get_if_addrs().context("lecture des interfaces réseau impossible")?;
     Ok(all
         .into_iter()
-        .filter(|i| !i.is_loopback())
+        .filter(|i| !i.is_loopback() && !is_tunnel(&i.name))
         .filter_map(|i| match i.addr {
             if_addrs::IfAddr::V4(v4) => Some(Iface {
                 name: i.name,
@@ -260,6 +272,17 @@ pub fn run(iface: &Iface, hosts: &[Ipv4Addr]) -> Result<Vec<Found>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tunnels_are_not_scannable() {
+        for name in ["utun4", "utun0", "ipsec0", "ppp0", "gif0", "stf0", "tun1"] {
+            assert!(is_tunnel(name), "{name}");
+        }
+        // Wi-Fi, Ethernet, pont et adaptateurs restent balayables.
+        for name in ["en0", "en12", "bridge100", "tap0", "utunnel", "tunnel0"] {
+            assert!(!is_tunnel(name), "{name}");
+        }
+    }
 
     fn iface(name: &str, ip: &str, mask: &str) -> Iface {
         Iface {
