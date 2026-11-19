@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var erreurExport: String?
     @State private var aRenommer: Equipement?
     @State private var historiqueDe: Equipement?
+    @State private var gestionRouteurs = false
     @AppStorage("regroupement") private var regroupement = Regroupement.aucun
 
     /// Le regroupement n'a de sens que pour les baux et le balayage.
@@ -58,11 +59,11 @@ struct ContentView: View {
             }
             ToolbarItem {
                 Button {
-                    ajoutRouteur = true
+                    gestionRouteurs = true
                 } label: {
-                    Label("Ajouter un routeur", systemImage: "plus")
+                    Label("Routeurs", systemImage: "wifi.router")
                 }
-                .help("Ajouter un routeur")
+                .help("Routeurs : ajouter ou retirer")
             }
             ToolbarItem {
                 Button {
@@ -83,6 +84,9 @@ struct ContentView: View {
             Text(erreurExport ?? "")
         }
         .sheet(item: $historiqueDe) { HistoriqueView(equipement: $0) }
+        .sheet(isPresented: $gestionRouteurs) {
+            RouteursView { Task { await inventaire.charger() } }
+        }
         .sheet(item: $aRenommer) { equipement in
             RenommerView(equipement: equipement) {
                 Task { await inventaire.charger() }
@@ -104,7 +108,8 @@ struct ContentView: View {
 
     @ViewBuilder
     private var contenu: some View {
-        if inventaire.configurationManquante {
+        // Pendant un chargement, la liste des routeurs n'est pas encore sûre.
+        if inventaire.configurationManquante && !inventaire.enCours {
             ContentUnavailableView {
                 Label("Aucun routeur configuré", systemImage: "network.slash")
             } description: {

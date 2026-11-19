@@ -198,4 +198,16 @@ final class MacfindAppTests: XCTestCase {
         XCTAssertEqual(fiches[0].ips[0].lastSeen, Date(timeIntervalSince1970: 172800))
         XCTAssertTrue(try Fiche.decoder(Data("[]".utf8)).isEmpty)
     }
+
+    func testListeDesRouteurs() throws {
+        let routeurs = try JSONDecoder().decode(
+            [Routeur].self,
+            from: Data(
+                """
+                [{"name": "principal", "url": "https://192.0.2.1", "user": "lecture",
+                  "insecure": true}]
+                """.utf8))
+        XCTAssertEqual(routeurs.map(\.name), ["principal"])
+        XCTAssertTrue(routeurs[0].insecure)
+    }
 }
