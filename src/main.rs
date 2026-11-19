@@ -37,12 +37,34 @@ struct Cli {
     /// Demander les identifiants même s'ils sont enregistrés
     #[arg(long, global = true)]
     ask: bool,
+
+    /// Ne jamais poser de question : échouer si des identifiants manquent
+    #[arg(long, global = true, conflicts_with = "ask")]
+    no_prompt: bool,
 }
 
 #[derive(Subcommand)]
 enum Command {
     /// Crée ~/.config/macfind/config.toml avec un exemple
     Init,
+    /// Ajoute un routeur : teste la connexion, puis l'écrit dans la config
+    /// et enregistre le mot de passe dans le Trousseau
+    AddRouter {
+        /// Nom court du routeur (ex : principal)
+        name: String,
+        /// Adresse du routeur (ex : https://192.168.88.1)
+        #[arg(long)]
+        url: String,
+        /// Compte RouterOS (lecture seule conseillé)
+        #[arg(long)]
+        user: String,
+        /// Accepter un certificat auto-signé
+        #[arg(long)]
+        insecure: bool,
+        /// Lire le mot de passe sur l'entrée standard au lieu de le demander
+        #[arg(long)]
+        password_stdin: bool,
+    },
     /// Enregistre les identifiants d'un routeur dans le Trousseau macOS
     SetPassword {
         /// Nom du routeur tel que défini dans la config
@@ -162,6 +184,40 @@ fn find_router<'a>(cfg: &'a config::Config, name: &str) -> Result<&'a config::Ro
         .ok_or_else(|| anyhow::anyhow!("Routeur « {name} » absent de la config"))
 }
 
+/// Ajoute un routeur. Rien n'est écrit tant que la connexion n'a pas réussi.
+fn add_router(router: config::Router, password_stdin: bool) -> Result<()> {
+    config::check_new_router(&config::existing_routers()?, &router)?;
+    let password = if password_stdin {
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line)?;
+        line.trim_end_matches(['\r', '\n']).to_string()
+    } else {
+        rpassword::prompt_password("Mot de passe : ")?
+    };
+    if password.is_empty() {
+        bail!("Le mot de passe est vide");
+    }
+    let user = router.user.clone().unwrap_or_default();
+    let client = RouterClient::new(router.clone(), user.clone(), password.clone())?;
+    let leases = client.dhcp_leases().map_err(|e| {
+        // Le message 401 habituel renvoie à des options sans objet ici.
+        if format!("{e:#}").contains("(401)") {
+            anyhow::anyhow!("Authentification refusée : vérifie le compte et le mot de passe")
+        } else {
+            e
+        }
+    })?;
+    let path = config::append_router(&router)?;
+    config::save(&router, &user, &password)?;
+    println!(
+        "✓ Routeur « {} » ajouté ({} baux lus) : {}",
+        router.name,
+        leases.len(),
+        path.display()
+    );
+    Ok(())
+}
+
 /// Prépare un client par routeur. Les identifiants manquants sont demandés
 /// ici, un routeur après l'autre, avant le lancement des requêtes parallèles.
 fn clients(cli: &Cli, cfg: &config::Config) -> Result<Vec<(RouterClient, bool)>> {
@@ -181,7 +237,16 @@ fn clients(cli: &Cli, cfg: &config::Config) -> Result<Vec<(RouterClient, bool)>>
     routers
         .into_iter()
         .map(|r| {
-            let creds = config::credentials(&r, cli.ask)?;
+            let creds = if cli.no_prompt {
+                config::stored_credentials(&r).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Identifiants manquants pour « {0} » : lance `macfind set-password {0}`",
+                        r.name
+                    )
+                })?
+            } else {
+                config::credentials(&r, cli.ask)?
+            };
             let prompted = creds.prompted;
             Ok((RouterClient::new(r, creds.user, creds.password)?, prompted))
         })
@@ -413,6 +478,22 @@ fn main() -> Result<()> {
             let p = config::init()?;
             println!("Config créée : {}", p.display());
             println!("Édite-la, puis : macfind set-password <nom-du-routeur>");
+        }
+        Some(Command::AddRouter {
+            name,
+            url,
+            user,
+            insecure,
+            password_stdin,
+        }) => {
+            let router = config::Router {
+                name: name.trim().to_string(),
+                url: url.trim().trim_end_matches('/').to_string(),
+                user: Some(user.trim().to_string()),
+                insecure: *insecure,
+                timeout_secs: config::default_timeout(),
+            };
+            add_router(router, *password_stdin)?;
         }
         Some(Command::SetPassword { name }) => {
             let cfg = config::load()?;

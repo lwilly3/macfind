@@ -72,6 +72,12 @@ cargo install --path .
    ```
    Ajoute un bloc `[[routers]]` par routeur.
 
+   En une commande, sans éditer le fichier (le mot de passe est demandé,
+   la connexion testée, puis le tout enregistré) :
+   ```bash
+   macfind add-router principal --url https://192.168.88.1 --user macfind --insecure
+   ```
+
 3. **Premier lancement** :
    ```bash
    macfind leases
@@ -99,10 +105,12 @@ macfind scan                  # balaie le sous-réseau du Mac
 | `--no-arp` | Baux DHCP uniquement |
 | `--json` | Sortie JSON pour les scripts |
 | `--ask` | Redemander les identifiants pour cette fois |
+| `--no-prompt` | Ne poser aucune question : échouer si des identifiants manquent (scripts, application graphique) |
 
 | Commande | Effet |
 |---|---|
 | `macfind init` | Crée le fichier de configuration |
+| `macfind add-router <nom> --url <adresse> --user <compte> [--insecure]` | Teste la connexion, puis ajoute le routeur à la configuration et range le mot de passe dans le Trousseau |
 | `macfind routers` | Liste les routeurs configurés |
 | `macfind set-password <nom>` | Enregistre ou change les identifiants |
 | `macfind forget <nom>` | Efface les identifiants enregistrés |
@@ -139,6 +147,23 @@ n'est alors pas identifiable. `macfind privée` les liste toutes.
 
 Le code de sortie vaut 1 quand une recherche ne trouve rien.
 La variable `MACFIND_PASSWORD` remplace le Trousseau pour un test ponctuel.
+
+## Application graphique (en préparation)
+
+Une application macOS native (SwiftUI) affiche les baux DHCP et le balayage
+local dans un tableau triable, avec recherche, et permet d'ajouter un
+routeur sans passer par le Terminal. Elle embarque le binaire
+`macfind` et lit sa sortie `--json` ; la configuration et le Trousseau sont
+ceux de la ligne de commande.
+
+```bash
+scripts/build-app.sh             # construit dist/macfind.app
+scripts/build-app.sh --install   # puis l'installe dans /Applications
+```
+
+Il faut Xcode (Swift 6) et Rust. L'application est signée « ad hoc », sans
+compte développeur Apple : elle fonctionne sur le Mac qui l'a construite ;
+aucune version téléchargeable n'est encore publiée.
 
 ## Dépannage
 

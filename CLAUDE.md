@@ -30,8 +30,27 @@ data/oui.tsv   registre IEEE MA-L trié, généré par `scripts/maj-oui.sh` ;
                ne pas l'éditer à la main
 ```
 
-- Commandes : `init`, `set-password`, `forget`, `leases`, `routers`, `scan`.
-- Options globales : `--router`, `--no-arp`, `--json`, `--ask`.
+Application graphique (SwiftUI, paquet SwiftPM dans `app/`) : aucune logique
+réseau, elle lance le binaire `macfind` embarqué avec `--json --no-prompt`.
+
+```
+app/Sources/MacfindApp/
+  MacfindApp.swift   point d'entrée, fenêtre
+  ContentView.swift  tableau, recherche, barre d'outils
+  Inventaire.swift   état de la fenêtre (source, chargement, erreurs)
+  MacfindCLI.swift   lancement du binaire, tri résultats / avertissements
+  Equipement.swift   décodage de `Hit`, tri des IP, filtre de recherche
+  AjoutRouteurView.swift  fenêtre d'ajout d'un routeur (`add-router`)
+scripts/build-app.sh assemble `dist/macfind.app` (signature ad hoc)
+```
+
+- Tests de l'app : `swift test --package-path app`.
+- Pas de compte développeur Apple pour le moment : ni Developer ID ni
+  notarisation.
+
+- Commandes : `init`, `add-router`, `set-password`, `forget`, `leases`,
+  `routers`, `scan`.
+- Options globales : `--router`, `--no-arp`, `--json`, `--ask`, `--no-prompt`.
 - Recherche : MAC partielle dans tout format, IP exacte, préfixe terminé par
   un point (`192.168.20.`), nom d'hôte, commentaire, fabricant.
 - Une MAC sans fabricant connu dont le bit « administrée localement » est levé
