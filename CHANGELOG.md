@@ -7,6 +7,18 @@ et le projet respecte le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Ajouté
+- Option `--no-prompt` : ne pose aucune question et échoue si les identifiants
+  d'un routeur manquent (pour les scripts et l'application graphique).
+- Commande `macfind add-router <nom> --url … --user …` : teste la connexion,
+  puis écrit le routeur dans la configuration et range le mot de passe dans
+  le Trousseau. Rien n'est écrit si le test échoue. `--password-stdin` lit le
+  mot de passe sur l'entrée standard.
+- Première version de l'application graphique macOS (`app/`, construite par
+  `scripts/build-app.sh`) : tableau triable des baux DHCP et du balayage
+  local, recherche, copie de l'IP ou de la MAC, ajout d'un routeur sans
+  passer par le Terminal.
+
 ## [0.2.0] - 2026-11-18
 
 ### Ajouté

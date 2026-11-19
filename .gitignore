@@ -2,3 +2,5 @@
 /bin
 .DS_Store
 CLAUDE.local.md
+/dist
+/app/.build

@@ -36,3 +36,15 @@ jobs:
 
       - name: Tests
         run: cargo test --locked
+
+  application:
+    name: application SwiftUI
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compilation
+        run: swift build --package-path app
+
+      - name: Tests
+        run: swift test --package-path app

@@ -29,7 +29,7 @@ pub struct Router {
     pub timeout_secs: u64,
 }
 
-fn default_timeout() -> u64 {
+pub fn default_timeout() -> u64 {
     5
 }
 
@@ -89,6 +89,79 @@ pub fn init() -> Result<PathBuf> {
     Ok(path)
 }
 
+/// Bloc `[[routers]]` à ajouter au fichier de configuration.
+pub fn router_block(router: &Router) -> String {
+    // `toml::Value` se charge des guillemets et de l'échappement.
+    let quoted = |v: &str| toml::Value::String(v.to_string()).to_string();
+    let mut block = format!(
+        "[[routers]]\nname = {}\nurl = {}\n",
+        quoted(&router.name),
+        quoted(&router.url)
+    );
+    if let Some(user) = &router.user {
+        block.push_str(&format!("user = {}\n", quoted(user)));
+    }
+    block.push_str(&format!(
+        "insecure = {}\ntimeout_secs = {}\n",
+        router.insecure, router.timeout_secs
+    ));
+    block
+}
+
+/// Vérifie qu'un routeur peut être ajouté à la config (nom libre, URL plausible).
+pub fn check_new_router(existing: &[Router], router: &Router) -> Result<()> {
+    if router.name.trim().is_empty() {
+        bail!("Le nom du routeur est vide");
+    }
+    if !router.url.starts_with("https://") && !router.url.starts_with("http://") {
+        bail!(
+            "L'adresse doit commencer par https:// ou http:// : « {} »",
+            router.url
+        );
+    }
+    if existing.iter().any(|r| r.name == router.name) {
+        bail!("Un routeur nommé « {} » existe déjà", router.name);
+    }
+    Ok(())
+}
+
+/// Routeurs déjà configurés ; aucun si le fichier n'existe pas encore.
+pub fn existing_routers() -> Result<Vec<Router>> {
+    let path = config_path();
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let raw = std::fs::read_to_string(&path)
+        .with_context(|| format!("Lecture impossible de {}", path.display()))?;
+    let cfg: Config =
+        toml::from_str(&raw).with_context(|| format!("Config invalide : {}", path.display()))?;
+    Ok(cfg.routers)
+}
+
+/// Ajoute un routeur à la fin du fichier de configuration, créé au besoin.
+/// Le reste du fichier (commentaires compris) n'est pas touché.
+pub fn append_router(router: &Router) -> Result<PathBuf> {
+    let path = config_path();
+    let mut raw = if path.exists() {
+        std::fs::read_to_string(&path)
+            .with_context(|| format!("Lecture impossible de {}", path.display()))?
+    } else {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        "# Configuration de macfind\n# Le mot de passe n'est PAS stocké ici : il est dans le Trousseau macOS.\n"
+            .to_string()
+    };
+    if !raw.ends_with('\n') {
+        raw.push('\n');
+    }
+    raw.push('\n');
+    raw.push_str(&router_block(router));
+    std::fs::write(&path, raw)
+        .with_context(|| format!("Écriture impossible de {}", path.display()))?;
+    Ok(path)
+}
+
 /// Identifiants résolus pour un routeur.
 pub struct Credentials {
     pub user: String,
@@ -141,16 +214,22 @@ fn prompt_line(label: &str, default: Option<&str>) -> Result<String> {
     }
 }
 
+/// Identifiants déjà connus (config, Trousseau ou `MACFIND_PASSWORD`), sans
+/// rien demander. `None` s'il en manque un.
+pub fn stored_credentials(router: &Router) -> Option<Credentials> {
+    Some(Credentials {
+        user: stored_user(router)?,
+        password: stored_password(router)?,
+        prompted: false,
+    })
+}
+
 /// Récupère les identifiants : config/Trousseau d'abord, sinon les demande.
 /// `force_prompt` (option --ask) oblige à les saisir sans rien lire du Trousseau.
 pub fn credentials(router: &Router, force_prompt: bool) -> Result<Credentials> {
     if !force_prompt {
-        if let (Some(user), Some(password)) = (stored_user(router), stored_password(router)) {
-            return Ok(Credentials {
-                user,
-                password,
-                prompted: false,
-            });
+        if let Some(creds) = stored_credentials(router) {
+            return Ok(creds);
         }
     }
     eprintln!("🔐 Identifiants pour « {} » ({})", router.name, router.url);
@@ -198,4 +277,51 @@ pub fn forget(router: &Router) -> Result<bool> {
         }
     }
     Ok(removed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn router(name: &str, url: &str) -> Router {
+        Router {
+            name: name.to_string(),
+            url: url.to_string(),
+            user: Some("lecture".to_string()),
+            insecure: true,
+            timeout_secs: default_timeout(),
+        }
+    }
+
+    #[test]
+    fn router_block_is_read_back() {
+        // Un nom avec guillemet vérifie l'échappement.
+        let r = router("site \"nord\"", "https://192.0.2.1");
+        let cfg: Config = toml::from_str(&router_block(&r)).unwrap();
+        assert_eq!(cfg.routers.len(), 1);
+        assert_eq!(cfg.routers[0].name, r.name);
+        assert_eq!(cfg.routers[0].url, r.url);
+        assert_eq!(cfg.routers[0].user, r.user);
+        assert!(cfg.routers[0].insecure);
+    }
+
+    #[test]
+    fn block_appends_to_existing_config() {
+        let raw = format!(
+            "{EXAMPLE}\n{}",
+            router_block(&router("site2", "https://192.0.2.2"))
+        );
+        let cfg: Config = toml::from_str(&raw).unwrap();
+        let names: Vec<_> = cfg.routers.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["principal", "site2"]);
+    }
+
+    #[test]
+    fn new_router_rules() {
+        let existing = [router("principal", "https://192.0.2.1")];
+        assert!(check_new_router(&existing, &router("site2", "https://192.0.2.2")).is_ok());
+        assert!(check_new_router(&existing, &router("principal", "https://192.0.2.2")).is_err());
+        assert!(check_new_router(&existing, &router("site2", "192.0.2.2")).is_err());
+        assert!(check_new_router(&existing, &router(" ", "https://192.0.2.2")).is_err());
+    }
 }
