@@ -34,6 +34,19 @@ pub struct ArpEntry {
     pub comment: Option<String>,
 }
 
+/// Hôte appris par un bridge, tel que renvoyé par GET /rest/interface/bridge/host
+#[derive(Debug, Deserialize, Clone)]
+pub struct BridgeHost {
+    #[serde(rename = "mac-address")]
+    pub mac_address: Option<String>,
+    /// Port physique où la MAC a été vue (ex : ether5).
+    #[serde(rename = "on-interface")]
+    pub on_interface: Option<String>,
+    pub interface: Option<String>,
+    /// « true » pour les adresses du routeur lui-même.
+    pub local: Option<String>,
+}
+
 pub struct RouterClient {
     router: Router,
     user: String,
@@ -108,6 +121,10 @@ impl RouterClient {
 
     pub fn dhcp_leases(&self) -> Result<Vec<Lease>> {
         self.get("/ip/dhcp-server/lease")
+    }
+
+    pub fn bridge_hosts(&self) -> Result<Vec<BridgeHost>> {
+        self.get("/interface/bridge/host")
     }
 
     pub fn arp(&self) -> Result<Vec<ArpEntry>> {

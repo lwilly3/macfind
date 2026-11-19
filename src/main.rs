@@ -8,7 +8,7 @@ mod scan;
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 use comfy_table::{presets::UTF8_FULL_CONDENSED, Table};
-use routeros::{ArpEntry, Lease, RouterClient};
+use routeros::{ArpEntry, BridgeHost, Lease, RouterClient};
 
 #[derive(Parser)]
 #[command(
@@ -170,6 +170,8 @@ struct Hit {
     server: String,
     /// Sous-réseau /24 de l'adresse ; vide si elle est inconnue.
     subnet: String,
+    /// Port du routeur où l'équipement est branché ; vide s'il est inconnu.
+    port: String,
 }
 
 impl Hit {
@@ -198,6 +200,7 @@ impl Hit {
             source: "DHCP",
             server: l.server.clone().unwrap_or_default(),
             subnet: subnet_of(&ip),
+            port: String::new(),
             ip,
             mac: mac::pretty(l.mac_address.as_deref().unwrap_or_default()),
             vendor: oui::vendor(l.mac_address.as_deref().unwrap_or_default()).to_string(),
@@ -223,6 +226,7 @@ impl Hit {
             source: "ARP",
             server: String::new(),
             subnet: subnet_of(a.address.as_deref().unwrap_or_default()),
+            port: String::new(),
             ip: a.address.clone().unwrap_or_default(),
             mac: mac::pretty(a.mac_address.as_deref().unwrap_or_default()),
             vendor: oui::vendor(a.mac_address.as_deref().unwrap_or_default()).to_string(),
@@ -332,6 +336,28 @@ struct RouterData {
     router: String,
     leases: Vec<Lease>,
     arp: Vec<ArpEntry>,
+    /// Hôtes des bridges ; vide si le routeur n'en a pas ou refuse la lecture.
+    hosts: Vec<BridgeHost>,
+}
+
+/// Port du routeur où une MAC est branchée ; vide s'il est inconnu. Derrière
+/// un switch ou une borne, c'est le port qui y mène.
+fn port_of(hosts: &[BridgeHost], mac_addr: &str) -> String {
+    let wanted = mac::normalize(mac_addr);
+    if wanted.is_empty() {
+        return String::new();
+    }
+    hosts
+        .iter()
+        .filter(|h| h.local.as_deref() != Some("true"))
+        .filter(|h| mac::normalize(h.mac_address.as_deref().unwrap_or("")) == wanted)
+        .find_map(|h| {
+            h.on_interface
+                .clone()
+                .or_else(|| h.interface.clone())
+                .filter(|p| !p.is_empty())
+        })
+        .unwrap_or_default()
 }
 
 /// Interroge chaque routeur en parallèle (un thread par routeur). Un routeur
@@ -341,14 +367,17 @@ fn fetch(cli: &Cli, want_arp: bool) -> Result<(Vec<RouterData>, Vec<RouterClient
     let cfg = config::load()?;
     let clients = clients(cli, &cfg)?;
 
-    let results: Vec<Result<(Vec<Lease>, Vec<ArpEntry>)>> = std::thread::scope(|s| {
+    type Fetched = (Vec<Lease>, Vec<ArpEntry>, Vec<BridgeHost>);
+    let results: Vec<Result<Fetched>> = std::thread::scope(|s| {
         let handles: Vec<_> = clients
             .iter()
             .map(|(c, _)| {
                 s.spawn(move || {
                     let leases = c.dhcp_leases()?;
                     let arp = if want_arp { c.arp()? } else { vec![] };
-                    Ok((leases, arp))
+                    // Le port est un complément : son absence n'est pas une erreur.
+                    let hosts = c.bridge_hosts().unwrap_or_default();
+                    Ok((leases, arp, hosts))
                 })
             })
             .collect();
@@ -359,11 +388,12 @@ fn fetch(cli: &Cli, want_arp: bool) -> Result<(Vec<RouterData>, Vec<RouterClient
     let mut to_offer = Vec::new();
     for (res, (client, prompted)) in results.into_iter().zip(clients) {
         match res {
-            Ok((leases, arp)) => {
+            Ok((leases, arp, hosts)) => {
                 data.push(RouterData {
                     router: client.name().to_string(),
                     leases,
                     arp,
+                    hosts,
                 });
                 if prompted {
                     to_offer.push(client);
@@ -411,6 +441,7 @@ fn hits_for(d: &RouterData, query: Option<&str>, show_arp: bool, only_anomalies:
         seen_macs.push(mac::normalize(m));
         let mut hit = Hit::from_lease(&d.router, l);
         hit.anomaly = report.for_lease(l);
+        hit.port = port_of(&d.hosts, m);
         if !only_anomalies || !hit.anomaly.is_empty() {
             hits.push(hit);
         }
@@ -424,6 +455,7 @@ fn hits_for(d: &RouterData, query: Option<&str>, show_arp: bool, only_anomalies:
         let comment = a.comment.as_deref().unwrap_or("");
         let mut hit = Hit::from_arp(&d.router, a);
         hit.anomaly = report.for_arp(a);
+        hit.port = port_of(&d.hosts, m);
         // L'ARP ne connaît pas les noms : reprendre celui d'un bail de la même MAC.
         if let Some(name) = d
             .leases
@@ -526,6 +558,7 @@ fn scan_hit(found: &scan::Found, lease: Option<(&str, &Lease)>, router_known: bo
             .and_then(|(_, l)| l.server.clone())
             .unwrap_or_default(),
         subnet: subnet_of(&found.ip.to_string()),
+        port: String::new(),
         ip: found.ip.to_string(),
         mac: found.mac.clone(),
         vendor: oui::vendor(&found.mac).to_string(),
@@ -557,7 +590,15 @@ fn scan_command(cli: &Cli, target: Option<&str>, filter: Option<&str>) -> Result
 
     let hits: Vec<Hit> = found
         .iter()
-        .map(|f| scan_hit(f, lease_for(&data, f), !data.is_empty()))
+        .map(|f| {
+            let mut hit = scan_hit(f, lease_for(&data, f), !data.is_empty());
+            hit.port = data
+                .iter()
+                .map(|d| port_of(&d.hosts, &f.mac))
+                .find(|p| !p.is_empty())
+                .unwrap_or_default();
+            hit
+        })
         .filter(|h| filter.is_none_or(|q| matches(q, &h.ip, &h.mac, &h.host, &h.detail)))
         .collect();
     print(&hits, cli.json, "Aucun résultat.")?;
@@ -630,6 +671,10 @@ fn table(hits: &[Hit]) -> Table {
         "Serveur / Interface",
         "Statut",
     ];
+    let ported = hits.iter().any(|h| !h.port.is_empty());
+    if ported {
+        header.insert(6, "Port");
+    }
     if flagged {
         header.push("Anomalie");
     }
@@ -647,6 +692,9 @@ fn table(hits: &[Hit]) -> Table {
             &h.detail,
             &h.status,
         ];
+        if ported {
+            row.insert(6, &h.port);
+        }
         if flagged {
             row.push(&h.anomaly);
         }
@@ -737,7 +785,7 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{group_hits, ip_key, matches, subnet_of, Group, Hit};
+    use super::{group_hits, ip_key, matches, port_of, subnet_of, BridgeHost, Group, Hit};
 
     fn hit(ip: &str, server: &str) -> Hit {
         Hit {
@@ -752,7 +800,31 @@ mod tests {
             anomaly: String::new(),
             server: server.to_string(),
             subnet: subnet_of(ip),
+            port: String::new(),
         }
+    }
+
+    #[test]
+    fn port_lookup() {
+        let host = |m: &str, on: Option<&str>, local: &str| BridgeHost {
+            mac_address: Some(m.to_string()),
+            on_interface: on.map(str::to_string),
+            interface: Some("bridge".to_string()),
+            local: Some(local.to_string()),
+        };
+        let hosts = [
+            host("00:15:5D:00:00:01", Some("ether5"), "false"),
+            host("00:15:5D:00:00:02", None, "false"),
+            host("00:15:5D:00:00:03", Some("bridge"), "true"),
+        ];
+        // La MAC est reconnue quel que soit son format.
+        assert_eq!(port_of(&hosts, "00-15-5d-00-00-01"), "ether5");
+        // Sans port physique connu, l'interface sert de repli.
+        assert_eq!(port_of(&hosts, "00:15:5D:00:00:02"), "bridge");
+        // Les adresses du routeur lui-même sont ignorées.
+        assert_eq!(port_of(&hosts, "00:15:5D:00:00:03"), "");
+        assert_eq!(port_of(&hosts, "00:15:5D:00:00:09"), "");
+        assert_eq!(port_of(&hosts, ""), "");
     }
 
     #[test]

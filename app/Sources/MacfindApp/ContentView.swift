@@ -190,6 +190,8 @@ struct ContentView: View {
             .width(min: 140, ideal: 150)
         TableColumn("Hôte", value: \.host) { Text($0.host).help($0.host) }
             .width(min: 80, ideal: 170)
+        TableColumn("Port", value: \.port) { Text($0.port).help("Port du routeur où l'équipement est branché. Derrière un switch ou une borne, c'est le port qui y mène.") }
+            .width(min: 50, ideal: 65)
         TableColumn("Fabricant", value: \.vendor) { Text($0.vendor).help($0.vendor) }
             .width(min: 80, ideal: 170)
         TableColumn("Serveur / Interface", value: \.detail) {
