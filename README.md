@@ -166,9 +166,11 @@ la ligne de commande.
 
 ### Installer l'application
 
-1. Télécharge `macfind-X.Y.Z.dmg` depuis la page
-   [Releases](https://github.com/lwilly3/macfind/releases) (une seule image
-   pour Apple Silicon et Intel).
+1. Télécharge l'image de ton Mac depuis la page
+   [Releases](https://github.com/lwilly3/macfind/releases) :
+   `macfind-X.Y.Z-apple-silicon.dmg` (puces M1 et suivantes) ou
+   `macfind-X.Y.Z-intel.dmg`. En cas de doute : menu Pomme › À propos de ce
+   Mac, ligne « Puce » ou « Processeur ».
 2. Ouvre l'image et glisse **macfind** dans **Applications**.
 3. Au premier lancement, macOS refuse d'ouvrir l'application : elle n'est pas
    signée par un développeur identifié auprès d'Apple. Pour l'autoriser, une
@@ -185,7 +187,7 @@ la ligne de commande.
    réseau local et au Trousseau : accepte les deux.
 
 Vérifier l'image téléchargée (facultatif) :
-`shasum -a 256 -c macfind-X.Y.Z.dmg.sha256`.
+`shasum -a 256 -c macfind-X.Y.Z-apple-silicon.dmg.sha256`.
 
 ### Construire l'application
 
@@ -194,7 +196,8 @@ Il faut Xcode (Swift 6) et Rust.
 ```bash
 scripts/build-app.sh                     # dist/macfind.app pour ce Mac
 scripts/build-app.sh --install           # puis l'installe dans /Applications
-scripts/build-app.sh --universal --dmg   # image disque universelle
+scripts/build-app.sh --dmg               # image disque pour ce Mac
+scripts/build-app.sh --arch x86_64 --dmg # image disque pour Mac Intel
 ```
 
 ## Dépannage

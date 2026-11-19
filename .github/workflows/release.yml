@@ -65,9 +65,16 @@ jobs:
           if-no-files-found: error
 
   application:
-    name: Application (image disque universelle)
+    name: Application ${{ matrix.arch }}
     needs: verifier
     runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            target: aarch64-apple-darwin
+          - arch: x86_64
+            target: x86_64-apple-darwin
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,21 +83,21 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: application
+          key: application-${{ matrix.target }}
 
       - name: Tests de l'interface
         run: swift test --package-path app
 
       - name: Image disque
-        run: scripts/build-app.sh --universal --dmg
+        run: scripts/build-app.sh --arch ${{ matrix.arch }} --dmg
 
       - uses: actions/upload-artifact@v4
         with:
-          name: application
+          name: application-${{ matrix.arch }}
           path: |
             dist/macfind-*.dmg
             dist/macfind-*.dmg.sha256

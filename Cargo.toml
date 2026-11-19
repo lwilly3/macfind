@@ -1,6 +1,6 @@
 [package]
 name = "macfind"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "Retrouver l'IP d'un équipement à partir de son adresse MAC en interrogeant les routeurs MikroTik (API REST RouterOS v7)"
 license = "MIT"
