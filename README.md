@@ -111,6 +111,7 @@ macfind scan                  # balaie le sous-réseau du Mac
 |---|---|
 | `macfind init` | Crée le fichier de configuration |
 | `macfind add-router <nom> --url <adresse> --user <compte> [--insecure]` | Teste la connexion, puis ajoute le routeur à la configuration et range le mot de passe dans le Trousseau |
+| `macfind leases --group subnet` | Baux regroupés par sous-réseau (`server` : par serveur DHCP) |
 | `macfind anomalies` | Liste les anomalies : plusieurs baux actifs pour une MAC, IP utilisée par deux MAC, équipement qui répond hors de ses baux |
 | `macfind routers` | Liste les routeurs configurés |
 | `macfind set-password <nom>` | Enregistre ou change les identifiants |

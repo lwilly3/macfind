@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var tri = [KeyPathComparator(\Equipement.ipKey)]
     @State private var selection = Set<Equipement.ID>()
     @State private var ajoutRouteur = false
+    @AppStorage("regroupement") private var regroupement = Regroupement.aucun
 
     private var lignes: [Equipement] {
         inventaire.visibles.sorted(using: tri)
@@ -147,40 +148,58 @@ struct ContentView: View {
         }
     }
 
+    @ViewBuilder
     private var tableau: some View {
-        Table(lignes, selection: $selection, sortOrder: $tri) {
-            // Repère d'anomalie : le détail est dans l'infobulle et dans la
-            // vue « Anomalies ». Trier cette colonne regroupe les lignes signalées.
-            TableColumn("⚠︎", value: \.anomaly) { e in
-                if !e.anomaly.isEmpty {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                        .help(e.anomaly)
-                        .accessibilityLabel("Anomalie : \(e.anomaly)")
+        if regroupement == .aucun {
+            Table(lignes, selection: $selection, sortOrder: $tri) { colonnes }
+                .contextMenu(forSelectionType: Equipement.ID.self) { ids in menu(ids) }
+        } else {
+            // Le tri choisi s'applique à l'intérieur de chaque groupe.
+            Table(of: Equipement.self, selection: $selection, sortOrder: $tri) {
+                colonnes
+            } rows: {
+                ForEach(Groupe.repartir(lignes, par: regroupement)) { groupe in
+                    Section(groupe.titre) {
+                        ForEach(groupe.lignes) { TableRow($0) }
+                    }
                 }
             }
-            .width(24)
-            // Largeur idéale = contenu le plus long attendu (une IP ou une MAC
-            // ne doit jamais être tronquée). Pas de borne haute : chaque
-            // colonne reste élargissable ; une fenêtre étroite défile.
-            TableColumn("IP", value: \.ipKey) { Text($0.ip).monospaced() }
-                .width(min: 125, ideal: 135)
-            TableColumn("MAC", value: \.mac) { Text($0.mac).monospaced() }
-                .width(min: 140, ideal: 150)
-            TableColumn("Hôte", value: \.host) { Text($0.host).help($0.host) }
-                .width(min: 80, ideal: 170)
-            TableColumn("Fabricant", value: \.vendor) { Text($0.vendor).help($0.vendor) }
-                .width(min: 80, ideal: 170)
-            TableColumn("Serveur / Interface", value: \.detail) {
-                Text($0.detail).help($0.detail)
-            }
-            .width(min: 80, ideal: 220)
-            TableColumn("Statut", value: \.status) { Text($0.status).help($0.status) }
-                .width(min: 80, ideal: 190)
-            TableColumn("Routeur", value: \.router)
-                .width(min: 60, ideal: 85)
+            .contextMenu(forSelectionType: Equipement.ID.self) { ids in menu(ids) }
         }
-        .contextMenu(forSelectionType: Equipement.ID.self) { ids in menu(ids) }
+    }
+
+    @TableColumnBuilder<Equipement, KeyPathComparator<Equipement>>
+    private var colonnes: some TableColumnContent<Equipement, KeyPathComparator<Equipement>> {
+        // Repère d'anomalie : le détail est dans l'infobulle et dans la
+        // vue « Anomalies ». Trier cette colonne regroupe les lignes signalées.
+        TableColumn("⚠︎", value: \.anomaly) { e in
+            if !e.anomaly.isEmpty {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .help(e.anomaly)
+                    .accessibilityLabel("Anomalie : \(e.anomaly)")
+            }
+        }
+        .width(24)
+        // Largeur idéale = contenu le plus long attendu (une IP ou une MAC
+        // ne doit jamais être tronquée). Pas de borne haute : chaque
+        // colonne reste élargissable ; une fenêtre étroite défile.
+        TableColumn("IP", value: \.ipKey) { Text($0.ip).monospaced() }
+            .width(min: 125, ideal: 135)
+        TableColumn("MAC", value: \.mac) { Text($0.mac).monospaced() }
+            .width(min: 140, ideal: 150)
+        TableColumn("Hôte", value: \.host) { Text($0.host).help($0.host) }
+            .width(min: 80, ideal: 170)
+        TableColumn("Fabricant", value: \.vendor) { Text($0.vendor).help($0.vendor) }
+            .width(min: 80, ideal: 170)
+        TableColumn("Serveur / Interface", value: \.detail) {
+            Text($0.detail).help($0.detail)
+        }
+        .width(min: 80, ideal: 220)
+        TableColumn("Statut", value: \.status) { Text($0.status).help($0.status) }
+            .width(min: 80, ideal: 190)
+        TableColumn("Routeur", value: \.router)
+            .width(min: 60, ideal: 85)
     }
 
     private var piedDePage: some View {
@@ -190,6 +209,14 @@ struct ContentView: View {
             }
             Text(compte)
             Spacer()
+            if inventaire.source != .anomalies {
+                Picker("Regrouper par", selection: $regroupement) {
+                    ForEach(Regroupement.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.menu)
+                .fixedSize()
+                .controlSize(.small)
+            }
             if let date = inventaire.derniereMaj {
                 Text("Mis à jour à \(date.formatted(date: .omitted, time: .standard))")
             }

@@ -113,7 +113,8 @@ Docs : `README.md`, `docs/mikrotik.md` (préparation du routeur, dépannage),
 ## Fonctions prévues, dans l'ordre
 
 1. ~~Fabricant de l'équipement à partir de l'OUI de la MAC~~ : fait.
-2. Tri et regroupement par sous-réseau ou par serveur DHCP dans `leases`.
+2. ~~Tri et regroupement par sous-réseau ou par serveur DHCP~~ : fait
+   (`leases --group subnet|server`). Le sous-réseau est supposé en /24.
 3. ~~Détection des anomalies~~ : fait (`macfind anomalies`). Le déplacement
    d'un équipement entre deux serveurs DHCP n'est volontairement pas signalé.
 4. Historique local des IP par MAC.

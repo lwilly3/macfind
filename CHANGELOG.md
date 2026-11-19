@@ -18,6 +18,9 @@ et le projet respecte le [versionnage sémantique](https://semver.org/lang/fr/).
   une adresse hors de ses baux (IP fixe en plus de baux dynamiques). Une
   colonne « Anomalie » s'ajoute aux tableaux quand il y a lieu.
 - Application : vue « Anomalies » et repère sur les lignes signalées.
+- `macfind leases --group subnet|server` : un tableau par sous-réseau (/24)
+  ou par serveur DHCP, trié par adresse. Champs JSON `server` et `subnet`.
+- Application : menu « Regrouper par » (sous-réseau ou serveur DHCP).
 - Option `--no-prompt` : ne pose aucune question et échoue si les identifiants
   d'un routeur manquent (pour les scripts et l'application graphique).
 - Commande `macfind add-router <nom> --url … --user …` : teste la connexion,
