@@ -54,7 +54,7 @@ app/Sources/MacfindApp/
   RenommerView.swift fenêtre « Renommer » (`macfind name`)
   HistoriqueView.swift fenêtre « Historique » (`macfind history`)
 scripts/build-app.sh assemble `dist/macfind.app` (signature ad hoc) ;
-                     `--universal --dmg` produit l'image disque des releases
+                     `--arch … --dmg` produit les images disque des releases
 scripts/make-icon.swift dessine l'icône (pas de symbole SF : interdit dans
                      une icône d'application)
 ```
@@ -62,6 +62,10 @@ scripts/make-icon.swift dessine l'icône (pas de symbole SF : interdit dans
 - Tests de l'app : `swift test --package-path app`.
 - Pas de compte développeur Apple pour le moment : ni Developer ID ni
   notarisation.
+- Pas de binaire universel : macOS 26 affiche « Fin de la prise en charge
+  des apps basées sur Intel » pour une application non notariée contenant du
+  code Intel, même lancée en natif (constaté avec la 0.3.0). Une image
+  disque par architecture.
 
 - Commandes : `init`, `add-router`, `remove-router`, `set-password`, `forget`, `leases`,
   `anomalies`, `routers`, `scan`, `name`, `names`, `new`, `history`.

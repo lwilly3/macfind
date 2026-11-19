@@ -7,24 +7,35 @@
 # Usage : scripts/build-app.sh [options]
 #   (sans option)   construit dist/macfind.app pour ce Mac
 #   --install       puis l'installe dans /Applications
-#   --universal     binaire universel (Apple Silicon et Intel) ; demande la
-#                   cible Rust de l'autre architecture :
+#   --arch ARCH     arm64 (Apple Silicon) ou x86_64 (Intel) au lieu de
+#                   l'architecture de ce Mac ; demande la cible Rust :
 #                   rustup target add aarch64-apple-darwin x86_64-apple-darwin
-#   --dmg           crée aussi dist/macfind-<version>.dmg
+#   --dmg           crée aussi dist/macfind-<version>-<apple-silicon|intel>.dmg
+#
+# Une image par architecture, et non un binaire universel : macOS 26 affiche
+# « Fin de la prise en charge des apps basées sur Intel » pour une application
+# non notariée qui contient du code Intel, même si elle tourne en natif.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 INSTALL=0
-UNIVERSAL=0
 DMG=0
-for option in "$@"; do
-    case "$option" in
+ARCH=""
+while [ $# -gt 0 ]; do
+    case "$1" in
         --install) INSTALL=1 ;;
-        --universal) UNIVERSAL=1 ;;
         --dmg) DMG=1 ;;
-        *) echo "Option inconnue : $option" >&2; exit 2 ;;
+        --arch) ARCH="${2:-}"; shift ;;
+        *) echo "Option inconnue : $1" >&2; exit 2 ;;
     esac
+    shift
 done
+NATIVE="$(uname -m)"
+case "${ARCH:-$NATIVE}" in
+    arm64) CIBLE=aarch64-apple-darwin; SUFFIXE=apple-silicon ;;
+    x86_64) CIBLE=x86_64-apple-darwin; SUFFIXE=intel ;;
+    *) echo "Architecture inconnue : ${ARCH:-$NATIVE} (arm64 ou x86_64)" >&2; exit 2 ;;
+esac
 APP="$ROOT/dist/macfind.app"
 CONTENTS="$APP/Contents"
 MACOS_DIR="$CONTENTS/MacOS"
@@ -35,16 +46,13 @@ VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/Cargo.toml" | head -1)"
 BUILD="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 1)"
 echo "== Version $VERSION (build $BUILD)"
 
-if [ "$UNIVERSAL" = "1" ]; then
-    echo "== Compilation du binaire macfind (universel)"
-    for cible in aarch64-apple-darwin x86_64-apple-darwin; do
-        cargo build --release --locked --manifest-path "$ROOT/Cargo.toml" --target "$cible"
-    done
-    BINAIRE="$ROOT/target/macfind-universel"
-    lipo -create -output "$BINAIRE" \
-        "$ROOT/target/aarch64-apple-darwin/release/macfind" \
-        "$ROOT/target/x86_64-apple-darwin/release/macfind"
-    ARCHS=(--arch arm64 --arch x86_64)
+if [ -n "$ARCH" ]; then
+    echo "== Compilation du binaire macfind ($ARCH)"
+    cargo build --release --locked --manifest-path "$ROOT/Cargo.toml" --target "$CIBLE"
+    BINAIRE="$ROOT/target/$CIBLE/release/macfind"
+    # Dossier de construction à part : SwiftPM s'emmêle quand un même
+    # dossier sert tour à tour à deux architectures.
+    ARCHS=(--arch "$ARCH" --scratch-path "$ROOT/app/.build-$ARCH")
 else
     echo "== Compilation du binaire macfind"
     cargo build --release --locked --manifest-path "$ROOT/Cargo.toml"
@@ -99,7 +107,7 @@ echo "Bundle prêt : $APP ($(du -sh "$APP" | awk '{print $1}'), $(lipo -archs "$
 
 if [ "$DMG" = "1" ]; then
     echo "== Image disque"
-    IMAGE="$ROOT/dist/macfind-$VERSION.dmg"
+    IMAGE="$ROOT/dist/macfind-$VERSION-$SUFFIXE.dmg"
     PREPARATION="$(mktemp -d)"
     cp -R "$APP" "$PREPARATION/"
     # Raccourci vers Applications : l'installation se fait par glisser-déposer.

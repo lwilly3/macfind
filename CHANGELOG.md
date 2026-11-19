@@ -7,6 +7,14 @@ et le projet respecte le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [0.3.1] - 2026-11-19
+
+### Modifié
+- Application : deux images disque, `macfind-X.Y.Z-apple-silicon.dmg` et
+  `macfind-X.Y.Z-intel.dmg`, au lieu d'une image universelle. Sur un Mac
+  Apple Silicon, macOS 26 affichait « Fin de la prise en charge des apps
+  basées sur Intel » pour l'image universelle de la 0.3.0.
+
 ### Corrigé
 - `macfind scan` échouait avec « Ce Mac est relié à plusieurs réseaux » dès
   qu'un VPN était actif (WireGuard en /24, par exemple). Les interfaces de
@@ -94,7 +102,8 @@ et le projet respecte le [versionnage sémantique](https://semver.org/lang/fr/).
 - Commandes `init`, `set-password`, `forget`, `leases`, `routers`.
 - Options `--router`, `--no-arp`, `--json`, `--ask`.
 
-[Non publié]: https://github.com/lwilly3/macfind/compare/v0.3.0...HEAD
+[Non publié]: https://github.com/lwilly3/macfind/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/lwilly3/macfind/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/lwilly3/macfind/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/lwilly3/macfind/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lwilly3/macfind/releases/tag/v0.1.0

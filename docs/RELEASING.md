@@ -41,9 +41,9 @@ dans une version mineure ; il doit alors être signalé dans le changelog.
 
 L'étiquette déclenche le workflow **Release** : il vérifie qu'elle correspond
 à la version de `Cargo.toml`, compile les binaires macOS (Apple Silicon et
-Intel), construit l'image disque universelle de l'application
-(`scripts/build-app.sh --universal --dmg`) et crée la release GitHub avec les
-archives, l'image et leurs sommes SHA-256.
+Intel), construit une image disque de l'application par architecture
+(`scripts/build-app.sh --arch … --dmg`) et crée la release GitHub avec les
+archives, les images et leurs sommes SHA-256.
 
 L'application est signée « ad hoc » : sans compte développeur Apple, elle
 n'est ni signée Developer ID ni notariée, et macOS demande une autorisation
