@@ -7,6 +7,13 @@ et le projet respecte le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Corrigé
+- `macfind scan` échouait avec « Ce Mac est relié à plusieurs réseaux » dès
+  qu'un VPN était actif (WireGuard en /24, par exemple). Les interfaces de
+  tunnel sont maintenant ignorées : elles n'ont pas d'ARP.
+- Application : sur un écran de message, les onglets restaient au milieu de
+  la fenêtre au lieu d'en haut.
+
 ## [0.3.0] - 2026-11-19
 
 ### Modifié
