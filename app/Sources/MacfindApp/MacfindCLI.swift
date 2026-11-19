@@ -74,6 +74,18 @@ enum MacfindCLI {
         try await executer(routeur.arguments, entree: routeur.motDePasse)
     }
 
+    /// Historique d'un équipement, d'après sa MAC. `nil` s'il n'y figure pas.
+    static func historique(mac: String) async throws -> Fiche? {
+        guard let binaire = binaire() else {
+            throw Echec(message: "Le binaire macfind est introuvable dans l'application.")
+        }
+        let resultat = try await lancer(binaire, ["history", mac, "--json"])
+        guard let fiches = try? Fiche.decoder(resultat.sortie) else {
+            throw Echec(message: messageDErreur(resultat.erreurs))
+        }
+        return fiches.first
+    }
+
     /// Arguments de `macfind name` : un nom vide efface le nom existant.
     /// Le « -- » protège un nom qui commencerait par un tiret.
     static func argumentsDeNom(mac: String, nom: String) -> [String] {

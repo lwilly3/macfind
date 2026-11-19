@@ -1,5 +1,6 @@
 mod anomaly;
 mod config;
+mod history;
 mod mac;
 mod names;
 mod oui;
@@ -107,6 +108,18 @@ enum Command {
     },
     /// Liste les noms donnés aux équipements
     Names,
+    /// Liste les équipements apparus récemment (d'après l'historique local)
+    New {
+        /// Ancienneté maximale, en jours
+        #[arg(long, default_value_t = NEW_DAYS, value_name = "JOURS")]
+        days: u64,
+    },
+    /// Affiche l'historique d'un équipement : adresses IP successives,
+    /// première et dernière vue
+    History {
+        /// MAC (complète ou partielle), IP, nom donné ou nom d'hôte
+        query: String,
+    },
     /// Balaie le sous-réseau local du Mac : IP, MAC, fabricant et nom
     Scan {
         /// Sous-réseau à balayer : 192.168.1.  ou  192.168.1.0/24
@@ -117,6 +130,9 @@ enum Command {
         filter: Option<String>,
     },
 }
+
+/// Un équipement reste « nouveau » pendant ce nombre de jours.
+const NEW_DAYS: u64 = 7;
 
 /// Forme de la sortie.
 #[derive(Clone, Copy, PartialEq)]
@@ -254,6 +270,12 @@ struct Hit {
     port: String,
     /// Nom donné par l'utilisateur (`macfind name`) ; vide s'il n'y en a pas.
     name: String,
+    /// Première et dernière vue d'après l'historique local, en secondes
+    /// Unix ; 0 si l'équipement n'y figure pas.
+    first_seen: u64,
+    last_seen: u64,
+    /// Apparu après le premier relevé, depuis moins de sept jours.
+    new: bool,
 }
 
 impl Hit {
@@ -303,6 +325,9 @@ impl Hit {
             subnet: subnet_of(&ip),
             port: String::new(),
             name: String::new(),
+            first_seen: 0,
+            last_seen: 0,
+            new: false,
             ip,
             mac: mac::pretty(l.mac_address.as_deref().unwrap_or_default()),
             vendor: oui::vendor(l.mac_address.as_deref().unwrap_or_default()).to_string(),
@@ -330,6 +355,9 @@ impl Hit {
             subnet: subnet_of(a.address.as_deref().unwrap_or_default()),
             port: String::new(),
             name: String::new(),
+            first_seen: 0,
+            last_seen: 0,
+            new: false,
             ip: a.address.clone().unwrap_or_default(),
             mac: mac::pretty(a.mac_address.as_deref().unwrap_or_default()),
             vendor: oui::vendor(a.mac_address.as_deref().unwrap_or_default()).to_string(),
@@ -592,6 +620,207 @@ fn hits_for(
     hits
 }
 
+/// Enregistre dans l'historique ce qui vient d'être vu (baux actifs, ARP,
+/// balayage) et renvoie l'historique à jour. Un historique illisible est
+/// signalé et laissé intact : rien n'est alors enregistré.
+fn record(data: &[RouterData], found: &[scan::Found]) -> history::History {
+    let mut hist = match history::load() {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("⚠️  {e:#}");
+            return history::History::default();
+        }
+    };
+    let now = history::now();
+    for d in data {
+        for l in d
+            .leases
+            .iter()
+            .filter(|l| l.status.as_deref() == Some("bound"))
+        {
+            let ip = l
+                .active_address
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .or(l.address.as_deref())
+                .unwrap_or("");
+            hist.record(
+                l.mac_address.as_deref().unwrap_or(""),
+                ip,
+                l.host_name.as_deref().unwrap_or(""),
+                now,
+            );
+        }
+        for a in d
+            .arp
+            .iter()
+            .filter(|a| a.complete.as_deref() != Some("false"))
+        {
+            hist.record(
+                a.mac_address.as_deref().unwrap_or(""),
+                a.address.as_deref().unwrap_or(""),
+                "",
+                now,
+            );
+        }
+    }
+    for f in found {
+        hist.record(&f.mac, &f.ip.to_string(), "", now);
+    }
+    if let Err(e) = history::save(&hist) {
+        eprintln!("⚠️  {e:#}");
+    }
+    hist
+}
+
+/// Reporte sur les lignes ce que l'historique sait de chaque équipement.
+fn stamp(hits: &mut [Hit], hist: &history::History) {
+    let now = history::now();
+    for h in hits {
+        if let Some(d) = hist.get(&h.mac) {
+            h.first_seen = d.first_seen;
+            h.last_seen = d.last_seen;
+            h.new = hist.is_new(&h.mac, now, NEW_DAYS);
+        }
+    }
+}
+
+/// Ligne d'un équipement de l'historique (commandes `new` et `history`).
+fn history_hit(mac_key: &str, d: &history::Device, names: &names::Names, now: u64) -> Hit {
+    let ip = d.last_ip().to_string();
+    Hit {
+        router: String::new(),
+        source: "HISTORIQUE",
+        subnet: subnet_of(&ip),
+        ip,
+        mac: mac::pretty(mac_key),
+        vendor: oui::vendor(mac_key).to_string(),
+        host: d.host.clone(),
+        detail: String::new(),
+        status: format!(
+            "première vue {} ; dernière vue {}",
+            history::ago(now, d.first_seen),
+            history::ago(now, d.last_seen)
+        ),
+        anomaly: String::new(),
+        server: String::new(),
+        port: String::new(),
+        name: names.get(mac_key).to_string(),
+        first_seen: d.first_seen,
+        last_seen: d.last_seen,
+        new: false,
+    }
+}
+
+/// Équipements apparus depuis `days` jours. Les routeurs sont d'abord relus
+/// pour que l'historique soit à jour ; s'ils sont injoignables, la liste
+/// vient de l'historique tel qu'il est.
+fn new_command(cli: &Cli, days: u64) -> Result<()> {
+    let hist = if config::config_path().exists() {
+        match fetch(cli, !cli.no_arp) {
+            Ok((data, _)) if !data.is_empty() => record(&data, &[]),
+            Ok(_) => history::load()?,
+            Err(e) => {
+                eprintln!("⚠️  {e:#}");
+                history::load()?
+            }
+        }
+    } else {
+        history::load()?
+    };
+    let names = load_names();
+    let now = history::now();
+    let mut hits: Vec<Hit> = hist
+        .devices
+        .iter()
+        .filter(|(k, _)| hist.is_new(k, now, days))
+        .map(|(k, d)| {
+            let mut h = history_hit(k, d, &names, now);
+            h.new = true;
+            h
+        })
+        .collect();
+    // Les plus récents d'abord.
+    hits.sort_by_key(|h| std::cmp::Reverse(h.first_seen));
+    let empty = format!("Aucun nouvel équipement depuis {days} jour(s).");
+    print(&hits, cli.format(), &empty)
+}
+
+/// Fiche d'un équipement pour `history --json`.
+#[derive(serde::Serialize)]
+struct HistoryEntry {
+    mac: String,
+    vendor: String,
+    name: String,
+    host: String,
+    first_seen: u64,
+    last_seen: u64,
+    new: bool,
+    ips: Vec<history::Sighting>,
+}
+
+/// Historique des équipements qui correspondent à la requête. Ne contacte
+/// aucun routeur.
+fn history_command(cli: &Cli, query: &str) -> Result<bool> {
+    let hist = history::load()?;
+    let names = load_names();
+    let now = history::now();
+    let entries: Vec<HistoryEntry> = hist
+        .devices
+        .iter()
+        .filter(|(k, d)| {
+            let name = names.get(k);
+            d.ips.iter().any(|s| s.ip == query.trim()) || matches(query, "", k, &d.host, name)
+        })
+        .map(|(k, d)| {
+            let mut ips = d.ips.clone();
+            ips.sort_by_key(|s| std::cmp::Reverse(s.last_seen));
+            HistoryEntry {
+                mac: mac::pretty(k),
+                vendor: oui::vendor(k).to_string(),
+                name: names.get(k).to_string(),
+                host: d.host.clone(),
+                first_seen: d.first_seen,
+                last_seen: d.last_seen,
+                new: hist.is_new(k, now, NEW_DAYS),
+                ips,
+            }
+        })
+        .collect();
+    if cli.format() == Format::Json {
+        println!("{}", serde_json::to_string_pretty(&entries)?);
+        return Ok(!entries.is_empty());
+    }
+    if entries.is_empty() {
+        println!("Aucun équipement correspondant dans l'historique.");
+        return Ok(false);
+    }
+    for e in &entries {
+        let label = [e.name.as_str(), e.host.as_str(), e.vendor.as_str()]
+            .iter()
+            .filter(|s| !s.is_empty())
+            .copied()
+            .collect::<Vec<_>>()
+            .join(" · ");
+        println!("{}  {label}", e.mac);
+        println!(
+            "  première vue {} ; dernière vue {}",
+            history::ago(now, e.first_seen),
+            history::ago(now, e.last_seen)
+        );
+        for s in &e.ips {
+            println!(
+                "  {:<15}  première vue {} ; dernière vue {}",
+                s.ip,
+                history::ago(now, s.first_seen),
+                history::ago(now, s.last_seen)
+            );
+        }
+        println!();
+    }
+    Ok(true)
+}
+
 fn collect(
     cli: &Cli,
     query: Option<&str>,
@@ -603,10 +832,12 @@ fn collect(
     let (data, to_offer) = fetch(cli, !cli.no_arp)?;
     let show_arp = !cli.no_arp && query.is_some();
     let names = load_names();
-    let hits: Vec<Hit> = data
+    let hist = record(&data, &[]);
+    let mut hits: Vec<Hit> = data
         .iter()
         .flat_map(|d| hits_for(d, &names, query, show_arp, only_anomalies))
         .collect();
+    stamp(&mut hits, &hist);
     // Affiche d'abord les résultats, puis propose l'enregistrement.
     let empty = if only_anomalies {
         "Aucune anomalie."
@@ -674,6 +905,9 @@ fn scan_hit(found: &scan::Found, lease: Option<(&str, &Lease)>, router_known: bo
         subnet: subnet_of(&found.ip.to_string()),
         port: String::new(),
         name: String::new(),
+        first_seen: 0,
+        last_seen: 0,
+        new: false,
         ip: found.ip.to_string(),
         mac: found.mac.clone(),
         vendor: oui::vendor(&found.mac).to_string(),
@@ -704,7 +938,8 @@ fn scan_command(cli: &Cli, target: Option<&str>, filter: Option<&str>) -> Result
     };
 
     let names = load_names();
-    let hits: Vec<Hit> = found
+    let hist = record(&data, &found);
+    let mut hits: Vec<Hit> = found
         .iter()
         .map(|f| {
             let mut hit = scan_hit(f, lease_for(&data, f), !data.is_empty());
@@ -728,6 +963,7 @@ fn scan_command(cli: &Cli, target: Option<&str>, filter: Option<&str>) -> Result
             })
         })
         .collect();
+    stamp(&mut hits, &hist);
     print(&hits, cli.format(), "Aucun résultat.")?;
     offer_saves(&to_offer);
     Ok(hits)
@@ -905,6 +1141,12 @@ fn main() -> Result<()> {
                 println!("✓ {} s'appelle « {} ».", mac::pretty(mac), name.trim());
             }
         }
+        Some(Command::New { days }) => new_command(&cli, *days)?,
+        Some(Command::History { query }) => {
+            if !history_command(&cli, query)? {
+                std::process::exit(1);
+            }
+        }
         Some(Command::Names) => {
             let all = names::load()?;
             let mut count = 0;
@@ -965,6 +1207,9 @@ mod tests {
             subnet: subnet_of(ip),
             port: String::new(),
             name: String::new(),
+            first_seen: 0,
+            last_seen: 0,
+            new: false,
         }
     }
 

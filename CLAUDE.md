@@ -26,6 +26,8 @@ src/
   anomaly.rs   détection des anomalies (baux multiples, IP partagée, adresse
                hors bail) à partir des baux et de l'ARP ; fonctions pures
   mac.rs       normalisation et détection des MAC
+  history.rs   historique local par MAC (`~/.config/macfind/history.json`) :
+               IP successives, première et dernière vue, « nouveaux »
   names.rs     noms donnés aux équipements (`~/.config/macfind/names.toml`,
                clé = MAC) ; le routeur n'est jamais modifié
   oui.rs       fabricant à partir de l'OUI (`data/oui.tsv` embarqué par
@@ -49,6 +51,7 @@ app/Sources/MacfindApp/
   AjoutRouteurView.swift  fenêtre d'ajout d'un routeur (`add-router`)
   Export.swift       export CSV pour Excel des lignes affichées
   RenommerView.swift fenêtre « Renommer » (`macfind name`)
+  HistoriqueView.swift fenêtre « Historique » (`macfind history`)
 scripts/build-app.sh assemble `dist/macfind.app` (signature ad hoc)
 ```
 
@@ -57,7 +60,7 @@ scripts/build-app.sh assemble `dist/macfind.app` (signature ad hoc)
   notarisation.
 
 - Commandes : `init`, `add-router`, `set-password`, `forget`, `leases`,
-  `anomalies`, `routers`, `scan`, `name`, `names`.
+  `anomalies`, `routers`, `scan`, `name`, `names`, `new`, `history`.
 - Options globales : `--router`, `--no-arp`, `--json`, `--csv`, `--ask`,
   `--no-prompt`.
 - Le format CSV existe en deux exemplaires à garder identiques : `to_csv`
@@ -126,4 +129,4 @@ Docs : `README.md`, `docs/mikrotik.md` (préparation du routeur, dépannage),
    (`leases --group subnet|server`). Le sous-réseau est supposé en /24.
 3. ~~Détection des anomalies~~ : fait (`macfind anomalies`). Le déplacement
    d'un équipement entre deux serveurs DHCP n'est volontairement pas signalé.
-4. Historique local des IP par MAC.
+4. ~~Historique local des IP par MAC~~ : fait (`history`, `new`).

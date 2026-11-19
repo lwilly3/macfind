@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var ajoutRouteur = false
     @State private var erreurExport: String?
     @State private var aRenommer: Equipement?
+    @State private var historiqueDe: Equipement?
     @AppStorage("regroupement") private var regroupement = Regroupement.aucun
 
     private var lignes: [Equipement] {
@@ -72,6 +73,7 @@ struct ContentView: View {
         } message: {
             Text(erreurExport ?? "")
         }
+        .sheet(item: $historiqueDe) { HistoriqueView(equipement: $0) }
         .sheet(item: $aRenommer) { equipement in
             RenommerView(equipement: equipement) {
                 Task { await inventaire.charger() }
@@ -122,6 +124,12 @@ struct ContentView: View {
         } else if lignes.isEmpty {
             if !inventaire.recherche.isEmpty {
                 ContentUnavailableView.search(text: inventaire.recherche)
+            } else if inventaire.source == .nouveaux {
+                ContentUnavailableView(
+                    "Aucun nouvel équipement", systemImage: "checkmark.circle",
+                    description: Text(
+                        "Aucun équipement n'est apparu sur le réseau depuis sept jours. Ceux présents lors du premier relevé ne comptent pas."
+                    ))
             } else if inventaire.source == .anomalies {
                 ContentUnavailableView(
                     "Aucune anomalie", systemImage: "checkmark.circle",
@@ -168,6 +176,14 @@ struct ContentView: View {
             if !e.name.isEmpty && !e.host.isEmpty {
                 Text(e.host).foregroundStyle(.secondary)
             }
+            if e.new && inventaire.source != .nouveaux {
+                Text("Nouveau")
+                    .font(.caption2).bold()
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(.blue.opacity(0.18), in: Capsule())
+                    .foregroundStyle(.blue)
+            }
         }
         .help(e.name.isEmpty ? e.host : "\(e.name) — nom d'hôte : \(e.host.isEmpty ? "aucun" : e.host)")
     }
@@ -183,6 +199,7 @@ struct ContentView: View {
             if !e.mac.isEmpty {
                 Divider()
                 Button("Renommer…") { aRenommer = e }
+                Button("Historique…") { historiqueDe = e }
             }
         }
     }
@@ -250,7 +267,7 @@ struct ContentView: View {
             }
             Text(compte)
             Spacer()
-            if inventaire.source != .anomalies {
+            if inventaire.source == .baux || inventaire.source == .balayage {
                 Picker("Regrouper par", selection: $regroupement) {
                     ForEach(Regroupement.allCases) { Text($0.rawValue).tag($0) }
                 }
