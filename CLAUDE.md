@@ -21,6 +21,8 @@ src/
   config.rs    ~/.config/macfind/config.toml (plusieurs [[routers]]),
                identifiants et Trousseau macOS (crate keyring)
   routeros.rs  client REST (reqwest blocking, native-tls), `Lease`, `ArpEntry`
+  anomaly.rs   détection des anomalies (baux multiples, IP partagée, adresse
+               hors bail) à partir des baux et de l'ARP ; fonctions pures
   mac.rs       normalisation et détection des MAC
   oui.rs       fabricant à partir de l'OUI (`data/oui.tsv` embarqué par
                `include_str!`, recherche dichotomique)
@@ -49,7 +51,7 @@ scripts/build-app.sh assemble `dist/macfind.app` (signature ad hoc)
   notarisation.
 
 - Commandes : `init`, `add-router`, `set-password`, `forget`, `leases`,
-  `routers`, `scan`.
+  `anomalies`, `routers`, `scan`.
 - Options globales : `--router`, `--no-arp`, `--json`, `--ask`, `--no-prompt`.
 - Recherche : MAC partielle dans tout format, IP exacte, préfixe terminé par
   un point (`192.168.20.`), nom d'hôte, commentaire, fabricant.
@@ -112,6 +114,6 @@ Docs : `README.md`, `docs/mikrotik.md` (préparation du routeur, dépannage),
 
 1. ~~Fabricant de l'équipement à partir de l'OUI de la MAC~~ : fait.
 2. Tri et regroupement par sous-réseau ou par serveur DHCP dans `leases`.
-3. Détection des anomalies : une même MAC avec plusieurs baux actifs
-   (une machine en IP fixe peut en plus accumuler des baux dynamiques).
+3. ~~Détection des anomalies~~ : fait (`macfind anomalies`). Le déplacement
+   d'un équipement entre deux serveurs DHCP n'est volontairement pas signalé.
 4. Historique local des IP par MAC.

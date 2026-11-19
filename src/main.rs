@@ -1,3 +1,4 @@
+mod anomaly;
 mod config;
 mod mac;
 mod oui;
@@ -77,6 +78,9 @@ enum Command {
     },
     /// Liste tous les baux DHCP
     Leases,
+    /// Liste les anomalies : plusieurs baux actifs pour une même MAC, une IP
+    /// utilisée par deux MAC, un équipement qui répond hors de ses baux
+    Anomalies,
     /// Affiche les routeurs configurés
     Routers,
     /// Balaie le sous-réseau local du Mac : IP, MAC, fabricant et nom
@@ -102,6 +106,8 @@ struct Hit {
     host: String,
     detail: String,
     status: String,
+    /// Anomalie relevée sur cette ligne ; vide s'il n'y en a pas.
+    anomaly: String,
 }
 
 impl Hit {
@@ -134,6 +140,7 @@ impl Hit {
             host: l.host_name.clone().unwrap_or_default(),
             detail,
             status,
+            anomaly: String::new(),
         }
     }
 
@@ -156,6 +163,7 @@ impl Hit {
             host: String::new(),
             detail,
             status: status.to_string(),
+            anomaly: String::new(),
         }
     }
 }
@@ -315,41 +323,80 @@ fn offer_saves(clients: &[RouterClient]) {
     }
 }
 
-fn collect(cli: &Cli, query: Option<&str>) -> Result<Vec<Hit>> {
-    let (data, to_offer) = fetch(cli, !cli.no_arp && query.is_some())?;
-
+/// Lignes d'un routeur. `show_arp` ajoute les équipements connus de l'ARP
+/// seul ; `only_anomalies` ne garde que les lignes signalées, y compris une
+/// entrée ARP dont la MAC a déjà des baux (machine hors de ses baux).
+fn hits_for(d: &RouterData, query: Option<&str>, show_arp: bool, only_anomalies: bool) -> Vec<Hit> {
+    let report = anomaly::Report::new(&d.leases, &d.arp);
     let mut hits = Vec::new();
-    for d in &data {
-        let mut seen_macs = Vec::new();
-        for l in &d.leases {
-            let ip = l
-                .active_address
-                .as_deref()
-                .or(l.address.as_deref())
-                .unwrap_or("");
-            let m = l.mac_address.as_deref().unwrap_or("");
-            let host = l.host_name.as_deref().unwrap_or("");
-            let comment = l.comment.as_deref().unwrap_or("");
-            if query.is_none_or(|q| matches(q, ip, m, host, comment)) {
-                seen_macs.push(mac::normalize(m));
-                hits.push(Hit::from_lease(&d.router, l));
-            }
+    let mut seen_macs = Vec::new();
+    for l in &d.leases {
+        let ip = l
+            .active_address
+            .as_deref()
+            .or(l.address.as_deref())
+            .unwrap_or("");
+        let m = l.mac_address.as_deref().unwrap_or("");
+        let host = l.host_name.as_deref().unwrap_or("");
+        let comment = l.comment.as_deref().unwrap_or("");
+        if !query.is_none_or(|q| matches(q, ip, m, host, comment)) {
+            continue;
         }
-        // L'ARP complète le DHCP (équipements en IP fixe), sans doublons.
-        for a in &d.arp {
-            let m = a.mac_address.as_deref().unwrap_or("");
-            if seen_macs.contains(&mac::normalize(m)) {
-                continue;
-            }
-            let ip = a.address.as_deref().unwrap_or("");
-            let comment = a.comment.as_deref().unwrap_or("");
-            if query.is_none_or(|q| matches(q, ip, m, "", comment)) {
-                hits.push(Hit::from_arp(&d.router, a));
-            }
+        seen_macs.push(mac::normalize(m));
+        let mut hit = Hit::from_lease(&d.router, l);
+        hit.anomaly = report.for_lease(l);
+        if !only_anomalies || !hit.anomaly.is_empty() {
+            hits.push(hit);
         }
     }
+    if !show_arp && !only_anomalies {
+        return hits;
+    }
+    for a in &d.arp {
+        let m = a.mac_address.as_deref().unwrap_or("");
+        let ip = a.address.as_deref().unwrap_or("");
+        let comment = a.comment.as_deref().unwrap_or("");
+        let mut hit = Hit::from_arp(&d.router, a);
+        hit.anomaly = report.for_arp(a);
+        // L'ARP ne connaît pas les noms : reprendre celui d'un bail de la même MAC.
+        if let Some(name) = d
+            .leases
+            .iter()
+            .filter(|l| mac::normalize(l.mac_address.as_deref().unwrap_or("")) == mac::normalize(m))
+            .find_map(|l| l.host_name.clone().filter(|h| !h.is_empty()))
+        {
+            hit.host = name;
+        }
+        let keep = if only_anomalies {
+            !hit.anomaly.is_empty()
+        } else {
+            // L'ARP complète le DHCP (équipements en IP fixe), sans doublons.
+            !seen_macs.contains(&mac::normalize(m))
+                && query.is_none_or(|q| matches(q, ip, m, "", comment))
+        };
+        if keep {
+            hits.push(hit);
+        }
+    }
+    hits
+}
+
+fn collect(cli: &Cli, query: Option<&str>, only_anomalies: bool) -> Result<Vec<Hit>> {
+    // L'ARP est lue même pour la simple liste des baux : elle sert à relever
+    // les anomalies. `--no-arp` limite la détection aux baux.
+    let (data, to_offer) = fetch(cli, !cli.no_arp)?;
+    let show_arp = !cli.no_arp && query.is_some();
+    let hits: Vec<Hit> = data
+        .iter()
+        .flat_map(|d| hits_for(d, query, show_arp, only_anomalies))
+        .collect();
     // Affiche d'abord les résultats, puis propose l'enregistrement.
-    print(&hits, cli.json)?;
+    let empty = if only_anomalies {
+        "Aucune anomalie."
+    } else {
+        "Aucun résultat."
+    };
+    print(&hits, cli.json, empty)?;
     offer_saves(&to_offer);
     Ok(hits)
 }
@@ -404,6 +451,7 @@ fn scan_hit(found: &scan::Found, lease: Option<(&str, &Lease)>, router_known: bo
         host,
         detail,
         status: status.to_string(),
+        anomaly: String::new(),
     }
 }
 
@@ -431,7 +479,7 @@ fn scan_command(cli: &Cli, target: Option<&str>, filter: Option<&str>) -> Result
         .map(|f| scan_hit(f, lease_for(&data, f), !data.is_empty()))
         .filter(|h| filter.is_none_or(|q| matches(q, &h.ip, &h.mac, &h.host, &h.detail)))
         .collect();
-    print(&hits, cli.json)?;
+    print(&hits, cli.json, "Aucun résultat.")?;
     offer_saves(&to_offer);
     Ok(hits)
 }
@@ -439,17 +487,18 @@ fn scan_command(cli: &Cli, target: Option<&str>, filter: Option<&str>) -> Result
 /// Largeur maximale de la colonne « Fabricant » (le JSON garde le nom entier).
 const VENDOR_WIDTH: usize = 24;
 
-fn print(hits: &[Hit], json: bool) -> Result<()> {
+fn print(hits: &[Hit], json: bool, empty: &str) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(hits)?);
         return Ok(());
     }
     if hits.is_empty() {
-        println!("Aucun résultat.");
+        println!("{empty}");
         return Ok(());
     }
-    let mut t = Table::new();
-    t.load_preset(UTF8_FULL_CONDENSED).set_header(vec![
+    // La colonne « Anomalie » n'apparaît que s'il y a quelque chose à signaler.
+    let flagged = hits.iter().filter(|h| !h.anomaly.is_empty()).count();
+    let mut header = vec![
         "Routeur",
         "Source",
         "IP",
@@ -458,15 +507,35 @@ fn print(hits: &[Hit], json: bool) -> Result<()> {
         "Hôte",
         "Serveur / Interface",
         "Statut",
-    ]);
+    ];
+    if flagged > 0 {
+        header.push("Anomalie");
+    }
+    let mut t = Table::new();
+    t.load_preset(UTF8_FULL_CONDENSED).set_header(header);
     for h in hits {
         let vendor = oui::short(&h.vendor, VENDOR_WIDTH);
-        t.add_row(vec![
-            &h.router, h.source, &h.ip, &h.mac, &vendor, &h.host, &h.detail, &h.status,
-        ]);
+        let mut row = vec![
+            h.router.as_str(),
+            h.source,
+            &h.ip,
+            &h.mac,
+            &vendor,
+            &h.host,
+            &h.detail,
+            &h.status,
+        ];
+        if flagged > 0 {
+            row.push(&h.anomaly);
+        }
+        t.add_row(row);
     }
     println!("{t}");
-    println!("{} résultat(s)", hits.len());
+    if flagged > 0 && flagged < hits.len() {
+        println!("{} résultat(s), dont {flagged} avec anomalie", hits.len());
+    } else {
+        println!("{} résultat(s)", hits.len());
+    }
     Ok(())
 }
 
@@ -523,7 +592,10 @@ fn main() -> Result<()> {
             }
         }
         Some(Command::Leases) => {
-            collect(&cli, None)?;
+            collect(&cli, None, false)?;
+        }
+        Some(Command::Anomalies) => {
+            collect(&cli, None, true)?;
         }
         Some(Command::Scan { target, filter }) => {
             let hits = scan_command(&cli, target.as_deref(), filter.as_deref())?;
@@ -533,7 +605,7 @@ fn main() -> Result<()> {
         }
         None => match cli.query.as_deref() {
             Some(q) => {
-                let hits = collect(&cli, Some(q))?;
+                let hits = collect(&cli, Some(q), false)?;
                 if hits.is_empty() {
                     std::process::exit(1);
                 }

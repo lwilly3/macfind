@@ -5,6 +5,7 @@ import Observation
 enum Source: String, CaseIterable, Identifiable {
     case baux = "Baux DHCP"
     case balayage = "Balayage local"
+    case anomalies = "Anomalies"
 
     var id: Self { self }
 
@@ -12,6 +13,7 @@ enum Source: String, CaseIterable, Identifiable {
         switch self {
         case .baux: ["leases"]
         case .balayage: ["scan"]
+        case .anomalies: ["anomalies"]
         }
     }
 }
@@ -32,9 +34,10 @@ final class Inventaire {
         equipements.filter { $0.correspond(a: recherche) }
     }
 
-    /// Les baux ont besoin d'un routeur configuré ; le balayage, non.
+    /// Les baux et les anomalies ont besoin d'un routeur configuré ; le
+    /// balayage, non.
     var configurationManquante: Bool {
-        source == .baux
+        source != .balayage
             && !FileManager.default.fileExists(atPath: MacfindCLI.configuration.path)
     }
 
