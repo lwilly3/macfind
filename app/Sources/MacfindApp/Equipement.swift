@@ -18,6 +18,8 @@ struct Equipement: Identifiable, Equatable {
     let server: String
     /// Sous-réseau /24 de l'adresse ; vide si elle est inconnue.
     let subnet: String
+    /// Port du routeur où l'équipement est branché ; vide s'il est inconnu.
+    let port: String
 
     /// Clé de tri numérique : sans elle, « 192.168.1.10 » passerait avant
     /// « 192.168.1.9 ».
@@ -42,7 +44,7 @@ struct Equipement: Identifiable, Equatable {
         // Une IP complète désigne une seule adresse : « 192.168.1.12 » ne doit
         // pas ramener « 192.168.1.120 ».
         if Equipement.ipKey(q) != .max { return ip == q }
-        let champs = [router, source, ip, mac, vendor, host, detail, status, anomaly]
+        let champs = [router, source, ip, mac, vendor, host, detail, status, anomaly, port]
         if champs.contains(where: { $0.lowercased().contains(q) }) { return true }
         let hexa = q.filter { !":-. ".contains($0) }
         let estMac = hexa.count >= 4 && hexa.allSatisfy(\.isHexDigit) && hexa.count != q.count
@@ -58,6 +60,7 @@ extension Equipement {
         let anomaly: String?
         let server: String?
         let subnet: String?
+        let port: String?
     }
 
     /// Décode la sortie de `macfind --json`.
@@ -66,7 +69,8 @@ extension Equipement {
             Equipement(
                 id: rang, router: l.router, source: l.source, ip: l.ip, mac: l.mac,
                 vendor: l.vendor, host: l.host, detail: l.detail, status: l.status,
-                anomaly: l.anomaly ?? "", server: l.server ?? "", subnet: l.subnet ?? "")
+                anomaly: l.anomaly ?? "", server: l.server ?? "", subnet: l.subnet ?? "",
+                port: l.port ?? "")
         }
     }
 }

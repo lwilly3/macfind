@@ -10,6 +10,8 @@ local ; le routeur connaît tous les sous-réseaux.
 - Baux DHCP : `GET /rest/ip/dhcp-server/lease`
 - Complétés par la table ARP : `GET /rest/ip/arp` (équipements en IP fixe,
   sans doublon avec les baux)
+- Port de branchement : `GET /rest/interface/bridge/host` (facultatif : un
+  échec de cette lecture est ignoré)
 - RouterOS renvoie toutes les valeurs sous forme de chaînes (`"true"`, `"1m7s"`).
 
 ## Code

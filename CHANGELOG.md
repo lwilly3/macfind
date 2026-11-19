@@ -21,6 +21,9 @@ et le projet respecte le [versionnage sémantique](https://semver.org/lang/fr/).
 - `macfind leases --group subnet|server` : un tableau par sous-réseau (/24)
   ou par serveur DHCP, trié par adresse. Champs JSON `server` et `subnet`.
 - Application : menu « Regrouper par » (sous-réseau ou serveur DHCP).
+- Port du routeur où chaque équipement est branché (table des hôtes du
+  bridge) : colonne « Port » et champ JSON `port`. Derrière un switch ou une
+  borne Wi-Fi, c'est le port qui y mène.
 - Option `--no-prompt` : ne pose aucune question et échoue si les identifiants
   d'un routeur manquent (pour les scripts et l'application graphique).
 - Commande `macfind add-router <nom> --url … --user …` : teste la connexion,

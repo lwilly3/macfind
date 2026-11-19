@@ -14,7 +14,7 @@ final class MacfindAppTests: XCTestCase {
           {"router": "principal", "source": "DHCP", "ip": "192.168.20.9",
            "mac": "DA:A1:19:00:00:01", "vendor": "(MAC privée)",
            "host": "", "detail": "dhcp20 (statique) — Caméra", "status": "waiting",
-           "anomaly": "2 baux actifs sur dhcp20"}
+           "anomaly": "2 baux actifs sur dhcp20", "port": "ether5"}
         ]
         """.utf8)
 
@@ -27,6 +27,9 @@ final class MacfindAppTests: XCTestCase {
         XCTAssertEqual(equipements[0].anomaly, "")
         XCTAssertEqual(equipements[1].anomaly, "2 baux actifs sur dhcp20")
         XCTAssertTrue(equipements[1].correspond(a: "baux actifs"))
+        XCTAssertEqual(equipements[0].port, "")
+        XCTAssertEqual(equipements[1].port, "ether5")
+        XCTAssertTrue(equipements[1].correspond(a: "ether5"))
     }
 
     func testTriNumeriqueDesIp() {
