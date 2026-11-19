@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var tri = [KeyPathComparator(\Equipement.ipKey)]
     @State private var selection = Set<Equipement.ID>()
     @State private var ajoutRouteur = false
+    @State private var erreurExport: String?
     @AppStorage("regroupement") private var regroupement = Regroupement.aucun
 
     private var lignes: [Equipement] {
@@ -36,6 +37,16 @@ struct ContentView: View {
             }
             ToolbarItem {
                 Button {
+                    erreurExport = Export.enregistrer(lignes, source: inventaire.source)
+                } label: {
+                    Label("Exporter pour Excel", systemImage: "square.and.arrow.up")
+                }
+                .keyboardShortcut("e")
+                .disabled(lignes.isEmpty)
+                .help("Exporter les lignes affichées pour Excel (⌘E)")
+            }
+            ToolbarItem {
+                Button {
                     ajoutRouteur = true
                 } label: {
                     Label("Ajouter un routeur", systemImage: "plus")
@@ -52,6 +63,13 @@ struct ContentView: View {
                 .disabled(inventaire.enCours)
                 .help("Actualiser (⌘R)")
             }
+        }
+        .alert(
+            "Export", isPresented: Binding(get: { erreurExport != nil }, set: { _ in erreurExport = nil })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(erreurExport ?? "")
         }
         .sheet(isPresented: $ajoutRouteur) {
             AjoutRouteurView {

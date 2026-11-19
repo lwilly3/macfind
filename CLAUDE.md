@@ -45,6 +45,7 @@ app/Sources/MacfindApp/
   MacfindCLI.swift   lancement du binaire, tri résultats / avertissements
   Equipement.swift   décodage de `Hit`, tri des IP, filtre de recherche
   AjoutRouteurView.swift  fenêtre d'ajout d'un routeur (`add-router`)
+  Export.swift       export CSV pour Excel des lignes affichées
 scripts/build-app.sh assemble `dist/macfind.app` (signature ad hoc)
 ```
 
@@ -54,7 +55,10 @@ scripts/build-app.sh assemble `dist/macfind.app` (signature ad hoc)
 
 - Commandes : `init`, `add-router`, `set-password`, `forget`, `leases`,
   `anomalies`, `routers`, `scan`.
-- Options globales : `--router`, `--no-arp`, `--json`, `--ask`, `--no-prompt`.
+- Options globales : `--router`, `--no-arp`, `--json`, `--csv`, `--ask`,
+  `--no-prompt`.
+- Le format CSV existe en deux exemplaires à garder identiques : `to_csv`
+  (main.rs) et `Export.csv` (app).
 - Recherche : MAC partielle dans tout format, IP exacte, préfixe terminé par
   un point (`192.168.20.`), nom d'hôte, commentaire, fabricant.
 - Une MAC sans fabricant connu dont le bit « administrée localement » est levé

@@ -105,6 +105,7 @@ macfind scan                  # balaie le sous-réseau du Mac
 | `--no-arp` | Baux DHCP uniquement |
 | `--json` | Sortie JSON pour les scripts |
 | `--ask` | Redemander les identifiants pour cette fois |
+| `--csv` | Sortie CSV pour Excel : `macfind leases --csv > baux.csv` |
 | `--no-prompt` | Ne poser aucune question : échouer si des identifiants manquent (scripts, application graphique) |
 
 | Commande | Effet |
