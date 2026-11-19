@@ -155,22 +155,47 @@ n'est alors pas identifiable. `macfind privée` les liste toutes.
 Le code de sortie vaut 1 quand une recherche ne trouve rien.
 La variable `MACFIND_PASSWORD` remplace le Trousseau pour un test ponctuel.
 
-## Application graphique (en préparation)
+## Application graphique
 
-Une application macOS native (SwiftUI) affiche les baux DHCP et le balayage
-local dans un tableau triable, avec recherche, et permet d'ajouter un
-routeur sans passer par le Terminal. Elle embarque le binaire
-`macfind` et lit sa sortie `--json` ; la configuration et le Trousseau sont
-ceux de la ligne de commande.
+Une application macOS native (SwiftUI, macOS 14 ou plus récent) reprend
+toutes les fonctions dans une fenêtre : tableau triable des baux, balayage
+local, anomalies, nouveaux équipements, recherche, regroupement, noms
+personnalisés, historique, export pour Excel et gestion des routeurs. Elle
+embarque le binaire `macfind` ; la configuration et le Trousseau sont ceux de
+la ligne de commande.
+
+### Installer l'application
+
+1. Télécharge `macfind-X.Y.Z.dmg` depuis la page
+   [Releases](https://github.com/lwilly3/macfind/releases) (une seule image
+   pour Apple Silicon et Intel).
+2. Ouvre l'image et glisse **macfind** dans **Applications**.
+3. Au premier lancement, macOS refuse d'ouvrir l'application : elle n'est pas
+   signée par un développeur identifié auprès d'Apple. Pour l'autoriser, une
+   seule fois :
+   - ouvre **Réglages Système › Confidentialité et sécurité** ;
+   - en bas de la page, clique sur **Ouvrir quand même** à côté de macfind,
+     puis confirme.
+
+   Ou, dans le Terminal :
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/macfind.app
+   ```
+4. Au premier accès au routeur, macOS demande l'autorisation d'accéder au
+   réseau local et au Trousseau : accepte les deux.
+
+Vérifier l'image téléchargée (facultatif) :
+`shasum -a 256 -c macfind-X.Y.Z.dmg.sha256`.
+
+### Construire l'application
+
+Il faut Xcode (Swift 6) et Rust.
 
 ```bash
-scripts/build-app.sh             # construit dist/macfind.app
-scripts/build-app.sh --install   # puis l'installe dans /Applications
+scripts/build-app.sh                     # dist/macfind.app pour ce Mac
+scripts/build-app.sh --install           # puis l'installe dans /Applications
+scripts/build-app.sh --universal --dmg   # image disque universelle
 ```
-
-Il faut Xcode (Swift 6) et Rust. L'application est signée « ad hoc », sans
-compte développeur Apple : elle fonctionne sur le Mac qui l'a construite ;
-aucune version téléchargeable n'est encore publiée.
 
 ## Dépannage
 
