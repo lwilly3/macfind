@@ -33,6 +33,15 @@ et le projet respecte le [versionnage sémantique](https://semver.org/lang/fr/).
   affiché dans la colonne « Hôte », pris en compte par la recherche et
   exposé dans le champ JSON `name`. Le routeur n'est pas modifié.
 - Application : « Renommer… » par clic droit sur une ligne.
+- Historique local (`~/.config/macfind/history.json`) : chaque lecture des
+  routeurs ou balayage note les équipements vus, leurs adresses IP
+  successives, la première et la dernière vue. `macfind history <requête>`
+  affiche la fiche d'un équipement sans contacter de routeur.
+- `macfind new [--days N]` : équipements apparus depuis N jours (7 par
+  défaut). Ceux présents lors du premier relevé ne comptent pas.
+- Champs JSON `first_seen`, `last_seen` (secondes Unix) et `new`.
+- Application : onglet « Nouveaux », pastille « Nouveau » sur les lignes et
+  « Historique… » par clic droit.
 - Option `--no-prompt` : ne pose aucune question et échoue si les identifiants
   d'un routeur manquent (pour les scripts et l'application graphique).
 - Commande `macfind add-router <nom> --url … --user …` : teste la connexion,

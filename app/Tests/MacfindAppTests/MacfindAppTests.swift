@@ -15,7 +15,7 @@ final class MacfindAppTests: XCTestCase {
            "mac": "DA:A1:19:00:00:01", "vendor": "(MAC privée)",
            "host": "", "detail": "dhcp20 (statique) — Caméra", "status": "waiting",
            "anomaly": "2 baux actifs sur dhcp20", "port": "ether5",
-           "name": "Caméra entrée"}
+           "name": "Caméra entrée", "new": true}
         ]
         """.utf8)
 
@@ -35,6 +35,8 @@ final class MacfindAppTests: XCTestCase {
         XCTAssertEqual(equipements[0].nomAffiche, "serveur-test")
         XCTAssertEqual(equipements[1].nomAffiche, "Caméra entrée")
         XCTAssertTrue(equipements[1].correspond(a: "caméra"))
+        XCTAssertFalse(equipements[0].new)
+        XCTAssertTrue(equipements[1].new)
     }
 
     func testTriNumeriqueDesIp() {
@@ -176,5 +178,21 @@ final class MacfindAppTests: XCTestCase {
             ["name", "--", mac, "Caméra entrée"])
         // Un nom vide efface le nom existant.
         XCTAssertEqual(MacfindCLI.argumentsDeNom(mac: mac, nom: "  "), ["name", "--clear", mac])
+    }
+
+    func testFicheDHistorique() throws {
+        let fiches = try Fiche.decoder(
+            Data(
+                """
+                [{"mac": "00:15:5D:00:00:01", "vendor": "Microsoft Corporation", "name": "",
+                  "host": "serveur-test", "first_seen": 86400, "last_seen": 172800, "new": false,
+                  "ips": [{"ip": "192.0.2.25", "first_seen": 90000, "last_seen": 172800},
+                          {"ip": "192.0.2.10", "first_seen": 86400, "last_seen": 90000}]}]
+                """.utf8))
+        XCTAssertEqual(fiches.count, 1)
+        XCTAssertEqual(fiches[0].firstSeen, Date(timeIntervalSince1970: 86400))
+        XCTAssertEqual(fiches[0].ips.map(\.ip), ["192.0.2.25", "192.0.2.10"])
+        XCTAssertEqual(fiches[0].ips[0].lastSeen, Date(timeIntervalSince1970: 172800))
+        XCTAssertTrue(try Fiche.decoder(Data("[]".utf8)).isEmpty)
     }
 }

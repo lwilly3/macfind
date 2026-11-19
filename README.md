@@ -114,6 +114,8 @@ macfind scan                  # balaie le sous-réseau du Mac
 | `macfind add-router <nom> --url <adresse> --user <compte> [--insecure]` | Teste la connexion, puis ajoute le routeur à la configuration et range le mot de passe dans le Trousseau |
 | `macfind leases --group subnet` | Baux regroupés par sous-réseau (`server` : par serveur DHCP) |
 | `macfind anomalies` | Liste les anomalies : plusieurs baux actifs pour une MAC, IP utilisée par deux MAC, équipement qui répond hors de ses baux |
+| `macfind new` | Équipements apparus depuis sept jours (`--days N`), d'après l'historique local |
+| `macfind history <requête>` | Adresses IP successives d'un équipement, première et dernière vue |
 | `macfind routers` | Liste les routeurs configurés |
 | `macfind name <MAC> <nom>` | Donne un nom à un équipement (`--clear` pour l'effacer) ; `macfind names` les liste |
 | `macfind set-password <nom>` | Enregistre ou change les identifiants |

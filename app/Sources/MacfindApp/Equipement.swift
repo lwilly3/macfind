@@ -23,6 +23,9 @@ struct Equipement: Identifiable, Equatable {
     /// Nom donné par l'utilisateur ; vide s'il n'y en a pas.
     let name: String
 
+    /// Apparu récemment d'après l'historique local.
+    let new: Bool
+
     /// Texte de la colonne « Hôte » : le nom donné s'il existe, sinon le nom
     /// d'hôte annoncé par l'équipement.
     var nomAffiche: String { name.isEmpty ? host : name }
@@ -68,6 +71,7 @@ extension Equipement {
         let subnet: String?
         let port: String?
         let name: String?
+        let new: Bool?
     }
 
     /// Décode la sortie de `macfind --json`.
@@ -77,7 +81,7 @@ extension Equipement {
                 id: rang, router: l.router, source: l.source, ip: l.ip, mac: l.mac,
                 vendor: l.vendor, host: l.host, detail: l.detail, status: l.status,
                 anomaly: l.anomaly ?? "", server: l.server ?? "", subnet: l.subnet ?? "",
-                port: l.port ?? "", name: l.name ?? "")
+                port: l.port ?? "", name: l.name ?? "", new: l.new ?? false)
         }
     }
 }
@@ -117,5 +121,43 @@ struct Groupe: Identifiable, Equatable {
                     titre: "\(valeur.isEmpty ? vide : valeur) — \(membres.count)",
                     lignes: membres)
             }
+    }
+}
+
+/// Fiche d'un équipement renvoyée par `macfind history --json`.
+struct Fiche: Decodable, Equatable {
+    struct Adresse: Decodable, Equatable, Identifiable {
+        let ip: String
+        let firstSeen: Date
+        let lastSeen: Date
+
+        var id: String { ip }
+
+        enum CodingKeys: String, CodingKey {
+            case ip
+            case firstSeen = "first_seen"
+            case lastSeen = "last_seen"
+        }
+    }
+
+    let mac: String
+    let vendor: String
+    let name: String
+    let host: String
+    let firstSeen: Date
+    let lastSeen: Date
+    let ips: [Adresse]
+
+    enum CodingKeys: String, CodingKey {
+        case mac, vendor, name, host, ips
+        case firstSeen = "first_seen"
+        case lastSeen = "last_seen"
+    }
+
+    /// Les dates sont en secondes Unix.
+    static func decoder(_ json: Data) throws -> [Fiche] {
+        let decodeur = JSONDecoder()
+        decodeur.dateDecodingStrategy = .secondsSince1970
+        return try decodeur.decode([Fiche].self, from: json)
     }
 }
