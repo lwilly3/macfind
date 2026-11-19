@@ -141,4 +141,25 @@ final class MacfindAppTests: XCTestCase {
         XCTAssertEqual(
             parServeur.map(\.titre), ["bureau — 1", "invites — 1", "Sans serveur DHCP — 1"])
     }
+
+    func testExportCsvPourExcel() throws {
+        XCTAssertEqual(Export.champ("imprimante"), "imprimante")
+        XCTAssertEqual(Export.champ("a;b"), "\"a;b\"")
+        XCTAssertEqual(Export.champ("dit \"x\""), "\"dit \"\"x\"\"\"")
+        // Un nom d'hôte ne doit pas devenir une formule.
+        XCTAssertEqual(Export.champ("=1+1"), "'=1+1")
+
+        let lignes = Export.csv(try Equipement.decoder(json)).components(separatedBy: "\r\n")
+        XCTAssertEqual(
+            lignes[0],
+            "\u{feff}Routeur;Source;IP;MAC;Fabricant;Hôte;Port;Serveur / Interface;Statut;Anomalie")
+        XCTAssertEqual(
+            lignes[2],
+            "principal;DHCP;192.168.20.9;DA:A1:19:00:00:01;(MAC privée);;ether5;dhcp20 (statique) — Caméra;waiting;2 baux actifs sur dhcp20"
+        )
+        XCTAssertEqual(lignes.count, 4)  // en-tête, deux lignes, fin de fichier
+        XCTAssertEqual(
+            Export.nomDeFichier(source: .baux, date: Date(timeIntervalSince1970: 0)),
+            "macfind-baux-dhcp-1970-01-01.csv")
+    }
 }

@@ -35,6 +35,10 @@ struct Cli {
     #[arg(long, global = true)]
     json: bool,
 
+    /// Sortie CSV pour Excel (séparateur « ; », UTF-8)
+    #[arg(long, global = true, conflicts_with = "json")]
+    csv: bool,
+
     /// Demander les identifiants même s'ils sont enregistrés
     #[arg(long, global = true)]
     ask: bool,
@@ -97,6 +101,66 @@ enum Command {
         #[arg(short, long, value_name = "TEXTE")]
         filter: Option<String>,
     },
+}
+
+/// Forme de la sortie.
+#[derive(Clone, Copy, PartialEq)]
+enum Format {
+    Table,
+    Json,
+    Csv,
+}
+
+impl Cli {
+    fn format(&self) -> Format {
+        if self.json {
+            Format::Json
+        } else if self.csv {
+            Format::Csv
+        } else {
+            Format::Table
+        }
+    }
+}
+
+/// Un champ CSV. Les noms d'hôte viennent des équipements du réseau : un
+/// champ qui commence par `=`, `+`, `-` ou `@` serait exécuté comme formule
+/// par Excel, il est donc neutralisé par une apostrophe.
+fn csv_field(value: &str) -> String {
+    let mut v = value.to_string();
+    if v.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        v.insert(0, '\'');
+    }
+    if v.contains([';', '"', '\n', '\r']) {
+        v = format!("\"{}\"", v.replace('"', "\"\""));
+    }
+    v
+}
+
+/// Les lignes au format CSV lu par Excel : séparateur « ; », fins de ligne
+/// CRLF, et marque d'ordre d'octets pour que les accents soient reconnus.
+fn to_csv(hits: &[Hit]) -> String {
+    let mut out = String::from(
+        "\u{feff}Routeur;Source;IP;MAC;Fabricant;Hôte;Port;Serveur / Interface;Statut;Anomalie\r\n",
+    );
+    for h in hits {
+        let fields = [
+            h.router.as_str(),
+            h.source,
+            &h.ip,
+            &h.mac,
+            &h.vendor,
+            &h.host,
+            &h.port,
+            &h.detail,
+            &h.status,
+            &h.anomaly,
+        ];
+        let line: Vec<String> = fields.iter().map(|f| csv_field(f)).collect();
+        out.push_str(&line.join(";"));
+        out.push_str("\r\n");
+    }
+    out
 }
 
 /// Critère de regroupement de `leases --group`.
@@ -500,9 +564,9 @@ fn collect(
         "Aucun résultat."
     };
     let hits = match group {
-        Some(g) => print_grouped(hits, g, cli.json, empty)?,
+        Some(g) => print_grouped(hits, g, cli.format(), empty)?,
         None => {
-            print(&hits, cli.json, empty)?;
+            print(&hits, cli.format(), empty)?;
             hits
         }
     };
@@ -601,7 +665,7 @@ fn scan_command(cli: &Cli, target: Option<&str>, filter: Option<&str>) -> Result
         })
         .filter(|h| filter.is_none_or(|q| matches(q, &h.ip, &h.mac, &h.host, &h.detail)))
         .collect();
-    print(&hits, cli.json, "Aucun résultat.")?;
+    print(&hits, cli.format(), "Aucun résultat.")?;
     offer_saves(&to_offer);
     Ok(hits)
 }
@@ -609,8 +673,12 @@ fn scan_command(cli: &Cli, target: Option<&str>, filter: Option<&str>) -> Result
 /// Largeur maximale de la colonne « Fabricant » (le JSON garde le nom entier).
 const VENDOR_WIDTH: usize = 24;
 
-fn print(hits: &[Hit], json: bool, empty: &str) -> Result<()> {
-    if json {
+fn print(hits: &[Hit], format: Format, empty: &str) -> Result<()> {
+    if format == Format::Csv {
+        print!("{}", to_csv(hits));
+        return Ok(());
+    }
+    if format == Format::Json {
         println!("{}", serde_json::to_string_pretty(hits)?);
         return Ok(());
     }
@@ -630,9 +698,9 @@ fn print(hits: &[Hit], json: bool, empty: &str) -> Result<()> {
 
 /// Affiche un tableau par groupe ; en JSON, la liste triée par groupe.
 /// Renvoie les lignes dans l'ordre affiché.
-fn print_grouped(hits: Vec<Hit>, group: Group, json: bool, empty: &str) -> Result<Vec<Hit>> {
+fn print_grouped(hits: Vec<Hit>, group: Group, format: Format, empty: &str) -> Result<Vec<Hit>> {
     let groups = group_hits(hits, group);
-    if !json {
+    if format == Format::Table {
         if groups.is_empty() {
             println!("{empty}");
         }
@@ -650,8 +718,10 @@ fn print_grouped(hits: Vec<Hit>, group: Group, json: bool, empty: &str) -> Resul
         .into_iter()
         .flat_map(|(_, members)| members)
         .collect();
-    if json {
+    if format == Format::Json {
         println!("{}", serde_json::to_string_pretty(&hits)?);
+    } else if format == Format::Csv {
+        print!("{}", to_csv(&hits));
     } else if !hits.is_empty() {
         println!("{} résultat(s)", hits.len());
     }
@@ -785,7 +855,9 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{group_hits, ip_key, matches, port_of, subnet_of, BridgeHost, Group, Hit};
+    use super::{
+        csv_field, group_hits, ip_key, matches, port_of, subnet_of, to_csv, BridgeHost, Group, Hit,
+    };
 
     fn hit(ip: &str, server: &str) -> Hit {
         Hit {
@@ -802,6 +874,29 @@ mod tests {
             subnet: subnet_of(ip),
             port: String::new(),
         }
+    }
+
+    #[test]
+    fn csv_for_excel() {
+        assert_eq!(csv_field("imprimante"), "imprimante");
+        assert_eq!(csv_field("a;b"), "\"a;b\"");
+        assert_eq!(csv_field("dit \"x\""), "\"dit \"\"x\"\"\"");
+        // Un nom d'hôte ne doit pas devenir une formule.
+        assert_eq!(csv_field("=1+1"), "'=1+1");
+        assert_eq!(csv_field("@cmd"), "'@cmd");
+
+        let mut h = hit("192.0.2.10", "dhcp1");
+        h.host = "poste;1".to_string();
+        let csv = to_csv(&[h]);
+        let mut lines = csv.split("\r\n");
+        assert!(lines
+            .next()
+            .unwrap()
+            .starts_with("\u{feff}Routeur;Source;IP;MAC;"));
+        assert_eq!(
+            lines.next().unwrap(),
+            "principal;DHCP;192.0.2.10;00:15:5D:00:00:01;;\"poste;1\";;;;"
+        );
     }
 
     #[test]

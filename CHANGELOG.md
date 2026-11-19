@@ -24,6 +24,10 @@ et le projet respecte le [versionnage sémantique](https://semver.org/lang/fr/).
 - Port du routeur où chaque équipement est branché (table des hôtes du
   bridge) : colonne « Port » et champ JSON `port`. Derrière un switch ou une
   borne Wi-Fi, c'est le port qui y mène.
+- Export pour Excel : option `--csv` (séparateur « ; », UTF-8 avec marque
+  d'ordre d'octets) et bouton « Exporter pour Excel » dans l'application,
+  qui enregistre les lignes affichées. Les valeurs qui ressemblent à une
+  formule sont neutralisées.
 - Option `--no-prompt` : ne pose aucune question et échoue si les identifiants
   d'un routeur manquent (pour les scripts et l'application graphique).
 - Commande `macfind add-router <nom> --url … --user …` : teste la connexion,
