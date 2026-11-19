@@ -72,6 +72,11 @@ enum Command {
         #[arg(long)]
         password_stdin: bool,
     },
+    /// Retire un routeur de la config et efface ses identifiants du Trousseau
+    RemoveRouter {
+        /// Nom du routeur tel que défini dans la config
+        name: String,
+    },
     /// Enregistre les identifiants d'un routeur dans le Trousseau macOS
     SetPassword {
         /// Nom du routeur tel que défini dans la config
@@ -1113,6 +1118,31 @@ fn main() -> Result<()> {
             } else {
                 println!("Aucun identifiant enregistré pour « {name} ».");
             }
+        }
+        Some(Command::RemoveRouter { name }) => {
+            let routers = config::existing_routers()?;
+            let router = routers
+                .iter()
+                .find(|r| r.name == *name)
+                .ok_or_else(|| anyhow::anyhow!("Routeur « {name} » absent de la config"))?;
+            config::remove_router(name)?;
+            config::forget(router)?;
+            println!("✓ Routeur « {name} » retiré.");
+        }
+        Some(Command::Routers) if cli.json => {
+            // Sans routeur, la liste est vide : ce n'est pas une erreur ici.
+            let routers: Vec<_> = config::existing_routers()?
+                .iter()
+                .map(|r| {
+                    serde_json::json!({
+                        "name": r.name,
+                        "url": r.url,
+                        "user": r.user.clone().unwrap_or_default(),
+                        "insecure": r.insecure,
+                    })
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&routers)?);
         }
         Some(Command::Routers) => {
             let cfg = config::load()?;

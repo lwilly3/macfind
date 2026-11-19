@@ -117,6 +117,7 @@ macfind scan                  # balaie le sous-réseau du Mac
 | `macfind new` | Équipements apparus depuis sept jours (`--days N`), d'après l'historique local |
 | `macfind history <requête>` | Adresses IP successives d'un équipement, première et dernière vue |
 | `macfind routers` | Liste les routeurs configurés |
+| `macfind remove-router <nom>` | Retire un routeur de la configuration et efface ses identifiants |
 | `macfind name <MAC> <nom>` | Donne un nom à un équipement (`--clear` pour l'effacer) ; `macfind names` les liste |
 | `macfind set-password <nom>` | Enregistre ou change les identifiants |
 | `macfind forget <nom>` | Efface les identifiants enregistrés |

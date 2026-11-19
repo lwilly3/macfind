@@ -74,6 +74,23 @@ enum MacfindCLI {
         try await executer(routeur.arguments, entree: routeur.motDePasse)
     }
 
+    /// Routeurs configurés ; liste vide s'il n'y en a pas.
+    static func routeurs() async throws -> [Routeur] {
+        guard let binaire = binaire() else {
+            throw Echec(message: "Le binaire macfind est introuvable dans l'application.")
+        }
+        let resultat = try await lancer(binaire, ["routers", "--json"])
+        guard let liste = try? JSONDecoder().decode([Routeur].self, from: resultat.sortie) else {
+            throw Echec(message: messageDErreur(resultat.erreurs))
+        }
+        return liste
+    }
+
+    /// Retire un routeur de la config et efface ses identifiants du Trousseau.
+    static func retirer(routeur nom: String) async throws {
+        try await executer(["remove-router", "--", nom])
+    }
+
     /// Historique d'un équipement, d'après sa MAC. `nil` s'il n'y figure pas.
     static func historique(mac: String) async throws -> Fiche? {
         guard let binaire = binaire() else {
@@ -190,4 +207,14 @@ enum MacfindCLI {
             }
         }
     }
+}
+
+/// Routeur configuré, tel que renvoyé par `macfind routers --json`.
+struct Routeur: Decodable, Identifiable, Equatable {
+    let name: String
+    let url: String
+    let user: String
+    let insecure: Bool
+
+    var id: String { name }
 }

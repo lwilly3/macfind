@@ -49,6 +49,7 @@ app/Sources/MacfindApp/
   MacfindCLI.swift   lancement du binaire, tri résultats / avertissements
   Equipement.swift   décodage de `Hit`, tri des IP, filtre de recherche
   AjoutRouteurView.swift  fenêtre d'ajout d'un routeur (`add-router`)
+  RouteursView.swift fenêtre « Routeurs » (liste, retrait)
   Export.swift       export CSV pour Excel des lignes affichées
   RenommerView.swift fenêtre « Renommer » (`macfind name`)
   HistoriqueView.swift fenêtre « Historique » (`macfind history`)
@@ -59,7 +60,7 @@ scripts/build-app.sh assemble `dist/macfind.app` (signature ad hoc)
 - Pas de compte développeur Apple pour le moment : ni Developer ID ni
   notarisation.
 
-- Commandes : `init`, `add-router`, `set-password`, `forget`, `leases`,
+- Commandes : `init`, `add-router`, `remove-router`, `set-password`, `forget`, `leases`,
   `anomalies`, `routers`, `scan`, `name`, `names`, `new`, `history`.
 - Options globales : `--router`, `--no-arp`, `--json`, `--csv`, `--ask`,
   `--no-prompt`.

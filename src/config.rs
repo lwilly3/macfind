@@ -162,6 +162,43 @@ pub fn append_router(router: &Router) -> Result<PathBuf> {
     Ok(path)
 }
 
+/// Retire le bloc `[[routers]]` de ce nom du contenu de la config. Les autres
+/// routeurs et leurs commentaires sont conservés ; les commentaires placés
+/// juste au-dessus du bloc retiré partent avec lui. `None` si aucun routeur
+/// ne porte ce nom.
+pub fn without_router(raw: &str, name: &str) -> Result<Option<String>> {
+    let mut doc: toml_edit::DocumentMut = raw.parse().context("Config invalide")?;
+    let Some(routers) = doc
+        .get_mut("routers")
+        .and_then(|item| item.as_array_of_tables_mut())
+    else {
+        return Ok(None);
+    };
+    let Some(index) = routers
+        .iter()
+        .position(|t| t.get("name").and_then(|v| v.as_str()) == Some(name))
+    else {
+        return Ok(None);
+    };
+    routers.remove(index);
+    if routers.is_empty() {
+        doc.remove("routers");
+    }
+    Ok(Some(doc.to_string()))
+}
+
+/// Retire un routeur du fichier de configuration.
+pub fn remove_router(name: &str) -> Result<()> {
+    let path = config_path();
+    let raw = std::fs::read_to_string(&path)
+        .with_context(|| format!("Lecture impossible de {}", path.display()))?;
+    match without_router(&raw, name)? {
+        Some(updated) => std::fs::write(&path, updated)
+            .with_context(|| format!("Écriture impossible de {}", path.display())),
+        None => bail!("Routeur « {name} » absent de la config"),
+    }
+}
+
 /// Identifiants résolus pour un routeur.
 pub struct Credentials {
     pub user: String,
@@ -314,6 +351,28 @@ mod tests {
         let cfg: Config = toml::from_str(&raw).unwrap();
         let names: Vec<_> = cfg.routers.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, ["principal", "site2"]);
+    }
+
+    #[test]
+    fn removes_one_router_and_keeps_the_rest() {
+        let raw = format!(
+            "# en-tête\n\n{}\n# second site\n{}",
+            router_block(&router("principal", "https://192.0.2.1")),
+            router_block(&router("site2", "https://192.0.2.2"))
+        );
+        let updated = without_router(&raw, "principal").unwrap().unwrap();
+        let cfg: Config = toml::from_str(&updated).unwrap();
+        let names: Vec<_> = cfg.routers.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["site2"]);
+        // Le commentaire d'un autre bloc reste ; celui placé juste au-dessus
+        // du bloc retiré part avec lui.
+        assert!(updated.contains("# second site"));
+        // Nom inconnu : rien à faire.
+        assert!(without_router(&raw, "inconnu").unwrap().is_none());
+        // Le dernier routeur retiré laisse une config sans routeur, mais valide.
+        let empty = without_router(&updated, "site2").unwrap().unwrap();
+        let cfg: Config = toml::from_str(&empty).unwrap();
+        assert!(cfg.routers.is_empty());
     }
 
     #[test]
