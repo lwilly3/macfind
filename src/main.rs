@@ -77,7 +77,12 @@ enum Command {
         name: String,
     },
     /// Liste tous les baux DHCP
-    Leases,
+    Leases {
+        /// Regrouper par sous-réseau (subnet) ou par serveur DHCP (server),
+        /// trié par adresse dans chaque groupe
+        #[arg(long, value_enum, value_name = "CRITÈRE")]
+        group: Option<Group>,
+    },
     /// Liste les anomalies : plusieurs baux actifs pour une même MAC, une IP
     /// utilisée par deux MAC, un équipement qui répond hors de ses baux
     Anomalies,
@@ -94,6 +99,59 @@ enum Command {
     },
 }
 
+/// Critère de regroupement de `leases --group`.
+#[derive(Clone, Copy, PartialEq, Debug, clap::ValueEnum)]
+enum Group {
+    /// Par sous-réseau /24
+    Subnet,
+    /// Par serveur DHCP
+    Server,
+}
+
+/// Sous-réseau /24 d'une adresse (`192.168.1.0/24`) ; vide si elle est
+/// illisible. Le masque réel n'est pas connu : /24 couvre le cas courant.
+fn subnet_of(ip: &str) -> String {
+    match ip.parse::<std::net::Ipv4Addr>() {
+        Ok(a) => {
+            let [x, y, z, _] = a.octets();
+            format!("{x}.{y}.{z}.0/24")
+        }
+        Err(_) => String::new(),
+    }
+}
+
+/// Clé de tri numérique d'une adresse ; les adresses illisibles vont à la fin.
+fn ip_key(ip: &str) -> u32 {
+    ip.parse::<std::net::Ipv4Addr>()
+        .map(u32::from)
+        .unwrap_or(u32::MAX)
+}
+
+/// Répartit les lignes par groupe. Les groupes sont triés (sous-réseaux dans
+/// l'ordre numérique, serveurs par nom), les lignes par adresse.
+fn group_hits(mut hits: Vec<Hit>, group: Group) -> Vec<(String, Vec<Hit>)> {
+    let key = |h: &Hit| match group {
+        Group::Subnet => h.subnet.clone(),
+        Group::Server => h.server.clone(),
+    };
+    match group {
+        // Trier par adresse range du même coup les sous-réseaux dans l'ordre.
+        Group::Subnet => hits.sort_by_key(|h| ip_key(&h.ip)),
+        Group::Server => hits.sort_by(|a, b| {
+            (a.server.as_str(), ip_key(&a.ip)).cmp(&(b.server.as_str(), ip_key(&b.ip)))
+        }),
+    }
+    let mut groups: Vec<(String, Vec<Hit>)> = Vec::new();
+    for h in hits {
+        let k = key(&h);
+        match groups.last_mut() {
+            Some((last, members)) if *last == k => members.push(h),
+            _ => groups.push((k, vec![h])),
+        }
+    }
+    groups
+}
+
 /// Une ligne de résultat, unifiée entre DHCP et ARP.
 #[derive(Debug, serde::Serialize)]
 struct Hit {
@@ -108,6 +166,10 @@ struct Hit {
     status: String,
     /// Anomalie relevée sur cette ligne ; vide s'il n'y en a pas.
     anomaly: String,
+    /// Serveur DHCP du bail ; vide hors DHCP.
+    server: String,
+    /// Sous-réseau /24 de l'adresse ; vide si elle est inconnue.
+    subnet: String,
 }
 
 impl Hit {
@@ -134,6 +196,8 @@ impl Hit {
         Self {
             router: router.to_string(),
             source: "DHCP",
+            server: l.server.clone().unwrap_or_default(),
+            subnet: subnet_of(&ip),
             ip,
             mac: mac::pretty(l.mac_address.as_deref().unwrap_or_default()),
             vendor: oui::vendor(l.mac_address.as_deref().unwrap_or_default()).to_string(),
@@ -157,6 +221,8 @@ impl Hit {
         Self {
             router: router.to_string(),
             source: "ARP",
+            server: String::new(),
+            subnet: subnet_of(a.address.as_deref().unwrap_or_default()),
             ip: a.address.clone().unwrap_or_default(),
             mac: mac::pretty(a.mac_address.as_deref().unwrap_or_default()),
             vendor: oui::vendor(a.mac_address.as_deref().unwrap_or_default()).to_string(),
@@ -381,7 +447,12 @@ fn hits_for(d: &RouterData, query: Option<&str>, show_arp: bool, only_anomalies:
     hits
 }
 
-fn collect(cli: &Cli, query: Option<&str>, only_anomalies: bool) -> Result<Vec<Hit>> {
+fn collect(
+    cli: &Cli,
+    query: Option<&str>,
+    only_anomalies: bool,
+    group: Option<Group>,
+) -> Result<Vec<Hit>> {
     // L'ARP est lue même pour la simple liste des baux : elle sert à relever
     // les anomalies. `--no-arp` limite la détection aux baux.
     let (data, to_offer) = fetch(cli, !cli.no_arp)?;
@@ -396,7 +467,13 @@ fn collect(cli: &Cli, query: Option<&str>, only_anomalies: bool) -> Result<Vec<H
     } else {
         "Aucun résultat."
     };
-    print(&hits, cli.json, empty)?;
+    let hits = match group {
+        Some(g) => print_grouped(hits, g, cli.json, empty)?,
+        None => {
+            print(&hits, cli.json, empty)?;
+            hits
+        }
+    };
     offer_saves(&to_offer);
     Ok(hits)
 }
@@ -445,6 +522,10 @@ fn scan_hit(found: &scan::Found, lease: Option<(&str, &Lease)>, router_known: bo
     Hit {
         router: lease.map(|(r, _)| r.to_string()).unwrap_or_default(),
         source: "SCAN",
+        server: lease
+            .and_then(|(_, l)| l.server.clone())
+            .unwrap_or_default(),
+        subnet: subnet_of(&found.ip.to_string()),
         ip: found.ip.to_string(),
         mac: found.mac.clone(),
         vendor: oui::vendor(&found.mac).to_string(),
@@ -496,8 +577,49 @@ fn print(hits: &[Hit], json: bool, empty: &str) -> Result<()> {
         println!("{empty}");
         return Ok(());
     }
-    // La colonne « Anomalie » n'apparaît que s'il y a quelque chose à signaler.
+    println!("{}", table(hits));
     let flagged = hits.iter().filter(|h| !h.anomaly.is_empty()).count();
+    if flagged > 0 && flagged < hits.len() {
+        println!("{} résultat(s), dont {flagged} avec anomalie", hits.len());
+    } else {
+        println!("{} résultat(s)", hits.len());
+    }
+    Ok(())
+}
+
+/// Affiche un tableau par groupe ; en JSON, la liste triée par groupe.
+/// Renvoie les lignes dans l'ordre affiché.
+fn print_grouped(hits: Vec<Hit>, group: Group, json: bool, empty: &str) -> Result<Vec<Hit>> {
+    let groups = group_hits(hits, group);
+    if !json {
+        if groups.is_empty() {
+            println!("{empty}");
+        }
+        for (name, members) in &groups {
+            let title = match (name.is_empty(), group) {
+                (false, _) => name.as_str(),
+                (true, Group::Subnet) => "(adresse inconnue)",
+                (true, Group::Server) => "(sans serveur DHCP)",
+            };
+            println!("{title} — {} équipement(s)", members.len());
+            println!("{}\n", table(members));
+        }
+    }
+    let hits: Vec<Hit> = groups
+        .into_iter()
+        .flat_map(|(_, members)| members)
+        .collect();
+    if json {
+        println!("{}", serde_json::to_string_pretty(&hits)?);
+    } else if !hits.is_empty() {
+        println!("{} résultat(s)", hits.len());
+    }
+    Ok(hits)
+}
+
+fn table(hits: &[Hit]) -> Table {
+    // La colonne « Anomalie » n'apparaît que s'il y a quelque chose à signaler.
+    let flagged = hits.iter().any(|h| !h.anomaly.is_empty());
     let mut header = vec![
         "Routeur",
         "Source",
@@ -508,7 +630,7 @@ fn print(hits: &[Hit], json: bool, empty: &str) -> Result<()> {
         "Serveur / Interface",
         "Statut",
     ];
-    if flagged > 0 {
+    if flagged {
         header.push("Anomalie");
     }
     let mut t = Table::new();
@@ -525,18 +647,12 @@ fn print(hits: &[Hit], json: bool, empty: &str) -> Result<()> {
             &h.detail,
             &h.status,
         ];
-        if flagged > 0 {
+        if flagged {
             row.push(&h.anomaly);
         }
         t.add_row(row);
     }
-    println!("{t}");
-    if flagged > 0 && flagged < hits.len() {
-        println!("{} résultat(s), dont {flagged} avec anomalie", hits.len());
-    } else {
-        println!("{} résultat(s)", hits.len());
-    }
-    Ok(())
+    t
 }
 
 fn main() -> Result<()> {
@@ -591,11 +707,11 @@ fn main() -> Result<()> {
                 );
             }
         }
-        Some(Command::Leases) => {
-            collect(&cli, None, false)?;
+        Some(Command::Leases { group }) => {
+            collect(&cli, None, false, *group)?;
         }
         Some(Command::Anomalies) => {
-            collect(&cli, None, true)?;
+            collect(&cli, None, true, None)?;
         }
         Some(Command::Scan { target, filter }) => {
             let hits = scan_command(&cli, target.as_deref(), filter.as_deref())?;
@@ -605,7 +721,7 @@ fn main() -> Result<()> {
         }
         None => match cli.query.as_deref() {
             Some(q) => {
-                let hits = collect(&cli, Some(q), false)?;
+                let hits = collect(&cli, Some(q), false, None)?;
                 if hits.is_empty() {
                     std::process::exit(1);
                 }
@@ -621,7 +737,61 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::matches;
+    use super::{group_hits, ip_key, matches, subnet_of, Group, Hit};
+
+    fn hit(ip: &str, server: &str) -> Hit {
+        Hit {
+            router: "principal".to_string(),
+            source: "DHCP",
+            ip: ip.to_string(),
+            mac: "00:15:5D:00:00:01".to_string(),
+            vendor: String::new(),
+            host: String::new(),
+            detail: String::new(),
+            status: String::new(),
+            anomaly: String::new(),
+            server: server.to_string(),
+            subnet: subnet_of(ip),
+        }
+    }
+
+    #[test]
+    fn subnet_and_ip_key() {
+        assert_eq!(subnet_of("192.0.2.57"), "192.0.2.0/24");
+        assert_eq!(subnet_of(""), "");
+        assert_eq!(subnet_of("pas-une-ip"), "");
+        assert!(ip_key("192.0.2.9") < ip_key("192.0.2.10"));
+        assert_eq!(ip_key(""), u32::MAX);
+    }
+
+    #[test]
+    fn groups_by_subnet_in_numeric_order() {
+        let hits = vec![
+            hit("198.51.100.7", "dhcp2"),
+            hit("192.0.2.10", "dhcp1"),
+            hit("", "dhcp1"),
+            hit("192.0.2.9", "dhcp1"),
+        ];
+        let groups = group_hits(hits, Group::Subnet);
+        let names: Vec<_> = groups.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, ["192.0.2.0/24", "198.51.100.0/24", ""]);
+        let first: Vec<_> = groups[0].1.iter().map(|h| h.ip.as_str()).collect();
+        assert_eq!(first, ["192.0.2.9", "192.0.2.10"]);
+    }
+
+    #[test]
+    fn groups_by_server() {
+        let hits = vec![
+            hit("198.51.100.7", "invites"),
+            hit("192.0.2.10", "bureau"),
+            hit("198.51.100.3", "invites"),
+        ];
+        let groups = group_hits(hits, Group::Server);
+        let names: Vec<_> = groups.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, ["bureau", "invites"]);
+        let second: Vec<_> = groups[1].1.iter().map(|h| h.ip.as_str()).collect();
+        assert_eq!(second, ["198.51.100.3", "198.51.100.7"]);
+    }
 
     #[test]
     fn match_rules() {

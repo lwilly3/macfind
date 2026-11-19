@@ -112,4 +112,30 @@ final class MacfindAppTests: XCTestCase {
                 "Error: [essai] connexion impossible à https://192.0.2.1\n\nCaused by:\n    délai dépassé\n"),
             "[essai] connexion impossible à https://192.0.2.1")
     }
+
+    func testRegroupement() throws {
+        let lignes = try Equipement.decoder(
+            Data(
+                """
+                [
+                  {"router": "r", "source": "DHCP", "ip": "198.51.100.7", "mac": "00:15:5D:00:00:01",
+                   "vendor": "", "host": "", "detail": "", "status": "", "anomaly": "",
+                   "server": "invites", "subnet": "198.51.100.0/24"},
+                  {"router": "r", "source": "DHCP", "ip": "192.0.2.10", "mac": "00:15:5D:00:00:02",
+                   "vendor": "", "host": "", "detail": "", "status": "", "anomaly": "",
+                   "server": "bureau", "subnet": "192.0.2.0/24"},
+                  {"router": "r", "source": "ARP", "ip": "192.0.2.9", "mac": "00:15:5D:00:00:03",
+                   "vendor": "", "host": "", "detail": "", "status": "", "anomaly": "",
+                   "server": "", "subnet": "192.0.2.0/24"}
+                ]
+                """.utf8))
+        // Sous-réseaux dans l'ordre numérique, ordre des lignes conservé.
+        let parReseau = Groupe.repartir(lignes, par: .sousReseau)
+        XCTAssertEqual(parReseau.map(\.titre), ["192.0.2.0/24 — 2", "198.51.100.0/24 — 1"])
+        XCTAssertEqual(parReseau[0].lignes.map(\.ip), ["192.0.2.10", "192.0.2.9"])
+        // Les lignes sans serveur ferment la liste.
+        let parServeur = Groupe.repartir(lignes, par: .serveur)
+        XCTAssertEqual(
+            parServeur.map(\.titre), ["bureau — 1", "invites — 1", "Sans serveur DHCP — 1"])
+    }
 }

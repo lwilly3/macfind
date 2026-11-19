@@ -14,6 +14,10 @@ struct Equipement: Identifiable, Equatable {
     let status: String
     /// Anomalie relevée par macfind ; vide s'il n'y en a pas.
     let anomaly: String
+    /// Serveur DHCP du bail ; vide hors DHCP.
+    let server: String
+    /// Sous-réseau /24 de l'adresse ; vide si elle est inconnue.
+    let subnet: String
 
     /// Clé de tri numérique : sans elle, « 192.168.1.10 » passerait avant
     /// « 192.168.1.9 ».
@@ -52,6 +56,8 @@ extension Equipement {
         let router, source, ip, mac, vendor, host, detail, status: String
         /// Absent des versions de macfind antérieures à la détection.
         let anomaly: String?
+        let server: String?
+        let subnet: String?
     }
 
     /// Décode la sortie de `macfind --json`.
@@ -60,7 +66,45 @@ extension Equipement {
             Equipement(
                 id: rang, router: l.router, source: l.source, ip: l.ip, mac: l.mac,
                 vendor: l.vendor, host: l.host, detail: l.detail, status: l.status,
-                anomaly: l.anomaly ?? "")
+                anomaly: l.anomaly ?? "", server: l.server ?? "", subnet: l.subnet ?? "")
         }
+    }
+}
+
+/// Regroupement des lignes du tableau.
+enum Regroupement: String, CaseIterable, Identifiable {
+    case aucun = "Aucun"
+    case sousReseau = "Sous-réseau"
+    case serveur = "Serveur DHCP"
+
+    var id: Self { self }
+}
+
+/// Un groupe de lignes et son titre.
+struct Groupe: Identifiable, Equatable {
+    let titre: String
+    let lignes: [Equipement]
+
+    var id: String { titre }
+
+    /// Répartit des lignes déjà triées, sans changer leur ordre dans chaque
+    /// groupe. Sous-réseaux dans l'ordre numérique, serveurs par nom ; les
+    /// lignes sans valeur vont dans un dernier groupe.
+    static func repartir(_ lignes: [Equipement], par critere: Regroupement) -> [Groupe] {
+        let cle: (Equipement) -> String = { critere == .serveur ? $0.server : $0.subnet }
+        let vide = critere == .serveur ? "Sans serveur DHCP" : "Adresse inconnue"
+        let ordre: (String) -> (UInt32, String) = { valeur in
+            if valeur.isEmpty { return (.max, "") }
+            if critere == .serveur { return (0, valeur.lowercased()) }
+            // « 192.168.1.0/24 » : trier sur l'adresse, pas sur le texte.
+            return (Equipement.ipKey(String(valeur.prefix { $0 != "/" })), "")
+        }
+        return Dictionary(grouping: lignes, by: cle)
+            .sorted { ordre($0.key) < ordre($1.key) }
+            .map { valeur, membres in
+                Groupe(
+                    titre: "\(valeur.isEmpty ? vide : valeur) — \(membres.count)",
+                    lignes: membres)
+            }
     }
 }
