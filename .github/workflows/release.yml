@@ -64,9 +64,41 @@ jobs:
             macfind-*.tar.gz.sha256
           if-no-files-found: error
 
+  application:
+    name: Application (image disque universelle)
+    needs: verifier
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Le numéro de build de l'application est le nombre de commits.
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: application
+
+      - name: Tests de l'interface
+        run: swift test --package-path app
+
+      - name: Image disque
+        run: scripts/build-app.sh --universal --dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: application
+          path: |
+            dist/macfind-*.dmg
+            dist/macfind-*.dmg.sha256
+          if-no-files-found: error
+
   publication:
     name: Release GitHub
-    needs: binaires
+    needs: [binaires, application]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

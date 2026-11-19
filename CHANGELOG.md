@@ -46,6 +46,8 @@ et le projet respecte le [versionnage sémantique](https://semver.org/lang/fr/).
   efface ses identifiants du Trousseau ; `macfind routers --json` liste les
   routeurs pour les scripts.
 - Application : fenêtre « Routeurs » pour ajouter ou retirer un routeur.
+- Application : icône, binaire universel (Apple Silicon et Intel) et image
+  disque `macfind-X.Y.Z.dmg` jointe aux releases.
 - Option `--no-prompt` : ne pose aucune question et échoue si les identifiants
   d'un routeur manquent (pour les scripts et l'application graphique).
 - Commande `macfind add-router <nom> --url … --user …` : teste la connexion,

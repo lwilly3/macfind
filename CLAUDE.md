@@ -53,7 +53,10 @@ app/Sources/MacfindApp/
   Export.swift       export CSV pour Excel des lignes affichées
   RenommerView.swift fenêtre « Renommer » (`macfind name`)
   HistoriqueView.swift fenêtre « Historique » (`macfind history`)
-scripts/build-app.sh assemble `dist/macfind.app` (signature ad hoc)
+scripts/build-app.sh assemble `dist/macfind.app` (signature ad hoc) ;
+                     `--universal --dmg` produit l'image disque des releases
+scripts/make-icon.swift dessine l'icône (pas de symbole SF : interdit dans
+                     une icône d'application)
 ```
 
 - Tests de l'app : `swift test --package-path app`.
