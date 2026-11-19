@@ -13,7 +13,8 @@ final class MacfindAppTests: XCTestCase {
            "status": "bound (vu il y a 1m7s)"},
           {"router": "principal", "source": "DHCP", "ip": "192.168.20.9",
            "mac": "DA:A1:19:00:00:01", "vendor": "(MAC privée)",
-           "host": "", "detail": "dhcp20 (statique) — Caméra", "status": "waiting"}
+           "host": "", "detail": "dhcp20 (statique) — Caméra", "status": "waiting",
+           "anomaly": "2 baux actifs sur dhcp20"}
         ]
         """.utf8)
 
@@ -22,6 +23,10 @@ final class MacfindAppTests: XCTestCase {
         XCTAssertEqual(equipements.map(\.id), [0, 1])
         XCTAssertEqual(equipements[0].host, "serveur-test")
         XCTAssertEqual(equipements[1].vendor, "(MAC privée)")
+        // Le champ `anomaly` est facultatif (anciennes versions de macfind).
+        XCTAssertEqual(equipements[0].anomaly, "")
+        XCTAssertEqual(equipements[1].anomaly, "2 baux actifs sur dhcp20")
+        XCTAssertTrue(equipements[1].correspond(a: "baux actifs"))
     }
 
     func testTriNumeriqueDesIp() {

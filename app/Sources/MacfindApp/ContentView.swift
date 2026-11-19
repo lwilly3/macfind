@@ -55,10 +55,10 @@ struct ContentView: View {
         .sheet(isPresented: $ajoutRouteur) {
             AjoutRouteurView {
                 // Affiche les baux du routeur qui vient d'être ajouté.
-                if inventaire.source == .baux {
-                    Task { await inventaire.charger() }
-                } else {
+                if inventaire.source == .balayage {
                     inventaire.source = .baux
+                } else {
+                    Task { await inventaire.charger() }
                 }
             }
         }
@@ -95,18 +95,71 @@ struct ContentView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if lignes.isEmpty {
-            if inventaire.recherche.isEmpty {
-                ContentUnavailableView("Aucun équipement", systemImage: "network")
-            } else {
+            if !inventaire.recherche.isEmpty {
                 ContentUnavailableView.search(text: inventaire.recherche)
+            } else if inventaire.source == .anomalies {
+                ContentUnavailableView(
+                    "Aucune anomalie", systemImage: "checkmark.circle",
+                    description: Text(
+                        "Aucune MAC avec plusieurs baux actifs, aucune IP partagée, aucun équipement hors de ses baux."
+                    ))
+            } else {
+                ContentUnavailableView("Aucun équipement", systemImage: "network")
             }
+        } else if inventaire.source == .anomalies {
+            tableauAnomalies
         } else {
             tableau
         }
     }
 
+    /// Vue « Anomalies » : le motif d'abord, le reste en appui.
+    private var tableauAnomalies: some View {
+        Table(lignes, selection: $selection, sortOrder: $tri) {
+            TableColumn("IP", value: \.ipKey) { Text($0.ip).monospaced() }
+                .width(min: 125, ideal: 135)
+            TableColumn("MAC", value: \.mac) { Text($0.mac).monospaced() }
+                .width(min: 140, ideal: 150)
+            TableColumn("Hôte", value: \.host) { Text($0.host).help($0.host) }
+                .width(min: 80, ideal: 160)
+            TableColumn("Anomalie", value: \.anomaly) { e in
+                Label(e.anomaly, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange, .primary)
+                    .help(e.anomaly)
+            }
+            .width(min: 200, ideal: 460)
+            TableColumn("Source", value: \.source)
+                .width(min: 50, ideal: 60)
+            TableColumn("Routeur", value: \.router)
+                .width(min: 60, ideal: 85)
+        }
+        .contextMenu(forSelectionType: Equipement.ID.self) { ids in menu(ids) }
+    }
+
+    @ViewBuilder
+    private func menu(_ ids: Set<Equipement.ID>) -> some View {
+        if let e = lignes.first(where: { ids.contains($0.id) }), ids.count == 1 {
+            Button("Copier l'IP") { copier(e.ip) }
+            Button("Copier la MAC") { copier(e.mac) }
+            if !e.host.isEmpty {
+                Button("Copier le nom") { copier(e.host) }
+            }
+        }
+    }
+
     private var tableau: some View {
         Table(lignes, selection: $selection, sortOrder: $tri) {
+            // Repère d'anomalie : le détail est dans l'infobulle et dans la
+            // vue « Anomalies ». Trier cette colonne regroupe les lignes signalées.
+            TableColumn("⚠︎", value: \.anomaly) { e in
+                if !e.anomaly.isEmpty {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .help(e.anomaly)
+                        .accessibilityLabel("Anomalie : \(e.anomaly)")
+                }
+            }
+            .width(24)
             // Largeur idéale = contenu le plus long attendu (une IP ou une MAC
             // ne doit jamais être tronquée). Pas de borne haute : chaque
             // colonne reste élargissable ; une fenêtre étroite défile.
@@ -127,15 +180,7 @@ struct ContentView: View {
             TableColumn("Routeur", value: \.router)
                 .width(min: 60, ideal: 85)
         }
-        .contextMenu(forSelectionType: Equipement.ID.self) { ids in
-            if let e = lignes.first(where: { ids.contains($0.id) }), ids.count == 1 {
-                Button("Copier l'IP") { copier(e.ip) }
-                Button("Copier la MAC") { copier(e.mac) }
-                if !e.host.isEmpty {
-                    Button("Copier le nom") { copier(e.host) }
-                }
-            }
-        }
+        .contextMenu(forSelectionType: Equipement.ID.self) { ids in menu(ids) }
     }
 
     private var piedDePage: some View {

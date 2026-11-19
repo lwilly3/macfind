@@ -12,6 +12,8 @@ struct Equipement: Identifiable, Equatable {
     let host: String
     let detail: String
     let status: String
+    /// Anomalie relevée par macfind ; vide s'il n'y en a pas.
+    let anomaly: String
 
     /// Clé de tri numérique : sans elle, « 192.168.1.10 » passerait avant
     /// « 192.168.1.9 ».
@@ -36,7 +38,7 @@ struct Equipement: Identifiable, Equatable {
         // Une IP complète désigne une seule adresse : « 192.168.1.12 » ne doit
         // pas ramener « 192.168.1.120 ».
         if Equipement.ipKey(q) != .max { return ip == q }
-        let champs = [router, source, ip, mac, vendor, host, detail, status]
+        let champs = [router, source, ip, mac, vendor, host, detail, status, anomaly]
         if champs.contains(where: { $0.lowercased().contains(q) }) { return true }
         let hexa = q.filter { !":-. ".contains($0) }
         let estMac = hexa.count >= 4 && hexa.allSatisfy(\.isHexDigit) && hexa.count != q.count
@@ -48,6 +50,8 @@ extension Equipement {
     /// Champs du JSON, sans l'identité locale.
     private struct Ligne: Decodable {
         let router, source, ip, mac, vendor, host, detail, status: String
+        /// Absent des versions de macfind antérieures à la détection.
+        let anomaly: String?
     }
 
     /// Décode la sortie de `macfind --json`.
@@ -55,7 +59,8 @@ extension Equipement {
         try JSONDecoder().decode([Ligne].self, from: json).enumerated().map { rang, l in
             Equipement(
                 id: rang, router: l.router, source: l.source, ip: l.ip, mac: l.mac,
-                vendor: l.vendor, host: l.host, detail: l.detail, status: l.status)
+                vendor: l.vendor, host: l.host, detail: l.detail, status: l.status,
+                anomaly: l.anomaly ?? "")
         }
     }
 }

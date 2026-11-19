@@ -7,7 +7,17 @@ et le projet respecte le [versionnage sémantique](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Modifié
+- `macfind leases` lit aussi la table ARP, nécessaire à la détection des
+  anomalies (une requête de plus par routeur ; `--no-arp` l'évite).
+
 ### Ajouté
+- Détection des anomalies : commande `macfind anomalies` et champ JSON
+  `anomaly`. Sont signalés une MAC avec plusieurs baux actifs sur le même
+  serveur DHCP, une IP utilisée par deux MAC, et un équipement qui répond à
+  une adresse hors de ses baux (IP fixe en plus de baux dynamiques). Une
+  colonne « Anomalie » s'ajoute aux tableaux quand il y a lieu.
+- Application : vue « Anomalies » et repère sur les lignes signalées.
 - Option `--no-prompt` : ne pose aucune question et échoue si les identifiants
   d'un routeur manquent (pour les scripts et l'application graphique).
 - Commande `macfind add-router <nom> --url … --user …` : teste la connexion,
