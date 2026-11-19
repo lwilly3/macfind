@@ -11,12 +11,27 @@ struct ContentView: View {
     @State private var historiqueDe: Equipement?
     @AppStorage("regroupement") private var regroupement = Regroupement.aucun
 
+    /// Le regroupement n'a de sens que pour les baux et le balayage.
+    private var regroupable: Bool {
+        inventaire.source == .baux || inventaire.source == .balayage
+    }
+
     private var lignes: [Equipement] {
         inventaire.visibles.sorted(using: tri)
     }
 
     var body: some View {
         VStack(spacing: 0) {
+            // Les onglets ont leur propre rangée : dans la barre d'outils, ils
+            // repoussaient les boutons hors de la fenêtre.
+            Picker("Source", selection: $inventaire.source) {
+                ForEach(Source.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: 520)
+            .padding(.vertical, 8)
+            Divider()
             ForEach(inventaire.avertissements, id: \.self) { texte in
                 Label(texte, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
@@ -31,12 +46,6 @@ struct ContentView: View {
         }
         .searchable(text: $inventaire.recherche, prompt: "MAC, IP, nom, fabricant")
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Picker("Source", selection: $inventaire.source) {
-                    ForEach(Source.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-            }
             ToolbarItem {
                 Button {
                     erreurExport = Export.enregistrer(lignes, source: inventaire.source)
@@ -141,9 +150,38 @@ struct ContentView: View {
             }
         } else if inventaire.source == .anomalies {
             tableauAnomalies
+        } else if inventaire.source == .nouveaux {
+            tableauNouveaux
         } else {
             tableau
         }
+    }
+
+    /// Vue « Nouveaux » : qui est apparu, et quand.
+    private var tableauNouveaux: some View {
+        Table(lignes, selection: $selection, sortOrder: $tri) {
+            TableColumn("IP", value: \.ipKey) { Text($0.ip).monospaced() }
+                .width(min: 125, ideal: 135)
+            TableColumn("MAC", value: \.mac) { Text($0.mac).monospaced() }
+                .width(min: 140, ideal: 150)
+            TableColumn("Hôte", value: \.nomAffiche) { hote($0) }
+                .width(min: 80, ideal: 170)
+            TableColumn("Fabricant", value: \.vendor) { Text($0.vendor).help($0.vendor) }
+                .width(min: 80, ideal: 150)
+            TableColumn("Première vue", value: \.firstSeen) { Text(Self.date($0.firstSeen)) }
+                .width(min: 110, ideal: 140)
+            TableColumn("Dernière vue", value: \.lastSeen) { Text(Self.date($0.lastSeen)) }
+                .width(min: 110, ideal: 140)
+        }
+        .contextMenu(forSelectionType: Equipement.ID.self) { ids in menu(ids) }
+    }
+
+    /// Date d'un relevé de l'historique ; vide si elle est inconnue.
+    private static func date(_ secondes: Int) -> String {
+        secondes == 0
+            ? ""
+            : Date(timeIntervalSince1970: TimeInterval(secondes))
+                .formatted(date: .abbreviated, time: .shortened)
     }
 
     /// Vue « Anomalies » : le motif d'abord, le reste en appui.
@@ -206,7 +244,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var tableau: some View {
-        if regroupement == .aucun {
+        if regroupement == .aucun || !regroupable {
             Table(lignes, selection: $selection, sortOrder: $tri) { colonnes }
                 .contextMenu(forSelectionType: Equipement.ID.self) { ids in menu(ids) }
         } else {
@@ -267,7 +305,7 @@ struct ContentView: View {
             }
             Text(compte)
             Spacer()
-            if inventaire.source == .baux || inventaire.source == .balayage {
+            if regroupable {
                 Picker("Regrouper par", selection: $regroupement) {
                     ForEach(Regroupement.allCases) { Text($0.rawValue).tag($0) }
                 }

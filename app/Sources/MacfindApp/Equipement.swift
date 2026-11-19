@@ -25,6 +25,9 @@ struct Equipement: Identifiable, Equatable {
 
     /// Apparu récemment d'après l'historique local.
     let new: Bool
+    /// Première et dernière vue, en secondes Unix ; 0 si inconnues.
+    let firstSeen: Int
+    let lastSeen: Int
 
     /// Texte de la colonne « Hôte » : le nom donné s'il existe, sinon le nom
     /// d'hôte annoncé par l'équipement.
@@ -72,6 +75,8 @@ extension Equipement {
         let port: String?
         let name: String?
         let new: Bool?
+        let first_seen: Int?
+        let last_seen: Int?
     }
 
     /// Décode la sortie de `macfind --json`.
@@ -81,7 +86,8 @@ extension Equipement {
                 id: rang, router: l.router, source: l.source, ip: l.ip, mac: l.mac,
                 vendor: l.vendor, host: l.host, detail: l.detail, status: l.status,
                 anomaly: l.anomaly ?? "", server: l.server ?? "", subnet: l.subnet ?? "",
-                port: l.port ?? "", name: l.name ?? "", new: l.new ?? false)
+                port: l.port ?? "", name: l.name ?? "", new: l.new ?? false,
+                firstSeen: l.first_seen ?? 0, lastSeen: l.last_seen ?? 0)
         }
     }
 }
